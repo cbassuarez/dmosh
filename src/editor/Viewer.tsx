@@ -1,11 +1,15 @@
 import { motion } from 'framer-motion'
 import { Project } from '../engine/types'
+import { useProject } from '../shared/hooks/useProject'
 
 interface Props {
   project: Project
 }
 
 const Viewer = ({ project }: Props) => {
+  const { selection } = useProject()
+  const seconds = selection.currentFrame / project.settings.fps
+  const timecode = new Date(seconds * 1000).toISOString().substring(14, 23)
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -19,11 +23,12 @@ const Viewer = ({ project }: Props) => {
           {project.settings.width}x{project.settings.height} @ {project.settings.fps}fps
         </span>
       </div>
-      <div className="flex h-[320px] items-center justify-center bg-gradient-to-br from-surface-200 to-surface-300 text-center">
-        <div className="space-y-2">
-          <p className="text-lg font-semibold text-white">Preview placeholder</p>
-          <p className="text-sm text-slate-300">Motion, masks, and glitch overlays animate here.</p>
-        </div>
+      <div className="flex h-[320px] flex-col items-center justify-center gap-2 bg-gradient-to-br from-surface-200 to-surface-300 text-center">
+        <p className="text-lg font-semibold text-white">Preview not implemented yet</p>
+        <p className="text-sm text-slate-300">Timeline scrubbing updates the current frame only.</p>
+        <span className="rounded-md border border-surface-300/60 bg-surface-200/80 px-3 py-1 font-mono text-sm text-white">
+          {timecode}
+        </span>
       </div>
     </motion.div>
   )
