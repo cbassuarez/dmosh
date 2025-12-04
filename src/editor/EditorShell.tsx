@@ -4,6 +4,7 @@ import { Download, FolderDown, PanelLeftClose, PanelLeftOpen, PanelRightClose, P
 import { motion as motionTokens } from '../shared/theme'
 import { useEngine } from '../shared/hooks/useEngine'
 import { useProject } from '../shared/hooks/useProject'
+import { useIsMobile } from '../hooks/useIsMobile'
 import ProjectPanel from './ProjectPanel'
 import Viewer from './Viewer'
 import Timeline from './Timeline'
@@ -13,6 +14,7 @@ import { ExportDialog } from './ExportDialog'
 import { usePlaybackLoop } from './usePlaybackLoop'
 import { timelineEndFrame } from './timelineUtils'
 import RenderQueuePanel from './RenderQueuePanel'
+import MobileEditorLayout from './MobileEditorLayout'
 
 const MIN_PANEL_WIDTH = 220
 
@@ -38,7 +40,7 @@ type Props = {
   onOpenNewProject: () => void
 }
 
-const EditorShell = ({ onOpenNewProject }: Props) => {
+const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState<null | 'left' | 'right'>(null)
   const [open, setOpen] = useState({ left: true, right: true })
@@ -231,6 +233,19 @@ const EditorShell = ({ onOpenNewProject }: Props) => {
       </div>
     </div>
   )
+}
+
+const EditorShell = ({ onOpenNewProject }: Props) => {
+  const { project } = useProject()
+  const isMobile = useIsMobile()
+
+  if (!project) return null
+
+  if (isMobile) {
+    return <MobileEditorLayout onOpenNewProject={onOpenNewProject} />
+  }
+
+  return <DesktopEditorLayout onOpenNewProject={onOpenNewProject} />
 }
 
 export default EditorShell

@@ -17,3 +17,7 @@ export interface ViewerState {
   resolution: ViewerResolution
   overlays: ViewerOverlays
 }
+
+export interface ViewerRuntimeSettings {
+  previewMaxHeight?: number
+}
