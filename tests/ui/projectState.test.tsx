@@ -68,5 +68,45 @@ describe('project lifecycle', () => {
     await waitFor(() => expect(getCtx().project?.timeline.tracks.length).toBeGreaterThan(0))
     expect(getCtx().project?.timeline.clips[0].timelineStartFrame).toBe(10)
   })
+
+  it('removes a track along with its clips and reindexes remaining tracks', async () => {
+    let ctx: ProjectContextShape | null = null
+    renderWithProvider((value) => {
+      ctx = value
+    })
+
+    const getCtx = () => {
+      if (!ctx) throw new Error('Context not ready')
+      return ctx
+    }
+
+    await waitFor(() => expect(ctx).not.toBeNull())
+    act(() => getCtx().newProject())
+    await waitFor(() => expect(getCtx().project).not.toBeNull())
+    act(() =>
+      getCtx().setProject({
+        ...getCtx().project!,
+        timeline: {
+          ...getCtx().project!.timeline,
+          tracks: [
+            { id: 't1', kind: 'video', index: 0, name: 'Video 1' },
+            { id: 't2', kind: 'video', index: 1, name: 'Video 2' },
+          ],
+          clips: [
+            { id: 'c1', trackId: 't2', sourceId: 'src-1', startFrame: 0, endFrame: 10, timelineStartFrame: 0 },
+          ],
+        },
+        sources: [
+          { id: 'src-1', originalName: 'clip.mov', hash: 'hash', audioPresent: false, pixelFormat: 'unknown', durationFrames: 12 },
+        ],
+      }),
+    )
+
+    act(() => getCtx().removeTrack('t2'))
+
+    await waitFor(() => expect(getCtx().project?.timeline.tracks.length).toBe(1))
+    expect(getCtx().project?.timeline.tracks[0].id).toBe('t1')
+    expect(getCtx().project?.timeline.clips.length).toBe(0)
+  })
 })
 

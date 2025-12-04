@@ -14,7 +14,7 @@ import {
   TimelineRange,
   TimelineTrack,
 } from '../../engine/types'
-import { hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
+import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
 
 const STORAGE_KEY = 'datamosh-current-project'
 
@@ -271,16 +271,14 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const removeTrack = useCallback(
     (trackId: string) => {
       if (!project) return
-      const hasClips = project.timeline.clips.some((clip) => clip.trackId === trackId)
-      if (hasClips) return
-      const remaining = project.timeline.tracks.filter((track) => track.id !== trackId)
-      const reindexed = remaining.map((track, idx) => ({ ...track, index: idx }))
-      save({
-        ...project,
-        timeline: { ...project.timeline, tracks: reindexed },
-      })
+      const removedClipIds = project.timeline.clips.filter((clip) => clip.trackId === trackId).map((clip) => clip.id)
+      const nextProject = deleteTrackAndClips(project, trackId)
+      save(nextProject)
+      if (removedClipIds.includes(selection.selectedClipId ?? '')) {
+        setSelection((prev) => ({ ...prev, selectedClipId: null }))
+      }
     },
-    [project, save],
+    [project, save, selection.selectedClipId],
   )
 
   const reorderTrack = useCallback(
