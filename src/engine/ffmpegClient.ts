@@ -1,29 +1,32 @@
 // src/engine/ffmpegClient.ts
-import { createFFmpeg, fetchFile, type FFmpeg } from "@ffmpeg/ffmpeg";
 
-let ffmpegInstance: FFmpeg | null = null;
+// NOTE: This is an initial stub to keep the engine surface stable while
+// we design the ffmpeg-core integration. It deliberately does NOT depend
+// on @ffmpeg/ffmpeg yet, so TypeScript + CI stay happy.
 
-export async function getFFmpeg(): Promise<FFmpeg> {
-  if (!ffmpegInstance) {
-    ffmpegInstance = createFFmpeg({
-      corePath: "/dmosh/ffmpeg-core.js", // can be adjusted; or let @ffmpeg/ffmpeg fetch its own core
-      log: true,
-    });
-    await ffmpegInstance.load();
-  }
-  return ffmpegInstance;
+export interface ProbedFileInfo {
+  fileName: string;
+  rawNameInFs: string;
 }
 
-export async function probeFile(file: File) {
-  const ffmpeg = await getFFmpeg();
-  const name = "input." + (file.name.split(".").pop() ?? "bin");
-  ffmpeg.FS("writeFile", name, await fetchFile(file));
+/**
+ * Placeholder for future ffmpeg-core loading.
+ * For now, calling this is an explicit error.
+ */
+export async function getFFmpeg(): Promise<never> {
+  throw new Error("ffmpeg-core integration is not implemented yet.");
+}
 
-  // TODO: run ffprobe-equivalent commands and parse frame index.
-  // For now, just return a stub.
+/**
+ * Placeholder probe that just returns the file's name.
+ * Later this will:
+ * - write to ffmpeg's FS
+ * - run a probe command
+ * - extract duration, fps, frame index, etc.
+ */
+export async function probeFile(file: File): Promise<ProbedFileInfo> {
   return {
     fileName: file.name,
-    rawNameInFs: name,
+    rawNameInFs: file.name,
   };
 }
-
