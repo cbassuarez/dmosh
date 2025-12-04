@@ -1,54 +1,262 @@
-import { motion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { EngineProgress, PlaybackMode, PreviewScale } from '../engine/engine'
-import { Project } from '../engine/types'
-import { useVideoEngine } from '../engine/worker/workerClient'
+import {
+  Pause,
+  Play,
+  Square,
+  StepBack,
+  StepForward,
+  RotateCcw,
+  RotateCw,
+  Gauge,
+  Layers,
+} from 'lucide-react'
+import { motion } from 'framer-motion'
+import { Project, TimelineClip } from '../engine/types'
 import { useProject } from '../shared/hooks/useProject'
-import { getActiveClipAtFrame } from './timelineUtils'
-import { useSourceThumbnail } from './thumbnailService'
+import { getActiveClipAtFrame, timelineEndFrame } from './timelineUtils'
+import { ViewerMode, ViewerOverlays, ViewerResolution } from './viewerState'
 
 interface Props {
   project: Project
 }
 
-const Viewer = ({ project }: Props) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { selection, playState, play, pause, stop, stepBackward, stepForward } = useProject()
-  const { engine, progress } = useVideoEngine()
-  const [previewScale, setPreviewScale] = useState<PreviewScale>('full')
-  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('realTime')
-  const [lastProgress, setLastProgress] = useState<EngineProgress>(progress)
-  const currentTimelineFrame = Math.round(selection.currentFrame)
-  const activeClip = useMemo(() => getActiveClipAtFrame(project, currentTimelineFrame), [project, currentTimelineFrame])
-  const activeSource = useMemo(
-    () => project.sources.find((s) => s.id === activeClip?.sourceId),
-    [project.sources, activeClip],
-  )
-  const { url: activeThumbnail, isLoading: thumbnailLoading } = useSourceThumbnail(activeSource)
-  const clipOffset = activeClip ? currentTimelineFrame - activeClip.timelineStartFrame : null
-  const clipLocalFrame = activeClip && clipOffset !== null ? activeClip.startFrame + clipOffset : null
-  const currentTimeSeconds = (clipLocalFrame ?? currentTimelineFrame) / project.timeline.fps
+const resolutionLabel: Record<ViewerResolution, string> = {
+  full: 'Full',
+  half: '1/2',
+  quarter: '1/4',
+}
 
-  useEffect(() => setLastProgress(progress), [progress])
+const viewerModes: ViewerMode[] = ['original', 'moshed', 'compare']
+
+const formatTimecode = (frame: number, fps: number) => {
+  const totalSeconds = Math.max(0, frame) / fps
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = Math.floor(totalSeconds % 60)
+  const frames = Math.floor(frame % fps)
+  const pad = (value: number, len = 2) => value.toString().padStart(len, '0')
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}:${pad(frames)}`
+}
+
+const OverlayToggle = ({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (value: boolean) => void
+}) => (
+  <label className="flex items-center gap-2 text-xs text-slate-200">
+    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    {label}
+  </label>
+)
+
+interface VideoViewportProps {
+  kind: 'original' | 'moshed'
+  project: Project
+  frame: number
+  resolution: ViewerResolution
+  overlays: ViewerOverlays
+}
+
+const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)'
+  ctx.lineWidth = 1
+  const thirdsX = [width / 3, (2 * width) / 3]
+  const thirdsY = [height / 3, (2 * height) / 3]
+  thirdsX.forEach((x) => {
+    ctx.beginPath()
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, height)
+    ctx.stroke()
+  })
+  thirdsY.forEach((y) => {
+    ctx.beginPath()
+    ctx.moveTo(0, y)
+    ctx.lineTo(width, y)
+    ctx.stroke()
+  })
+}
+
+const drawSafeArea = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  ctx.strokeStyle = 'rgba(52,211,153,0.8)'
+  ctx.lineWidth = 2
+  const marginX = width * 0.1
+  const marginY = height * 0.1
+  ctx.strokeRect(marginX, marginY, width - marginX * 2, height - marginY * 2)
+}
+
+const drawMotionVectors = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  ctx.strokeStyle = 'rgba(94,234,212,0.7)'
+  const step = Math.max(20, width / 12)
+  for (let x = step; x < width; x += step) {
+    for (let y = step; y < height; y += step) {
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + 8, y - 6)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(x + 8, y - 6)
+      ctx.lineTo(x + 3, y - 8)
+      ctx.stroke()
+    }
+  }
+}
+
+const drawMasks = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  ctx.strokeStyle = 'rgba(59,130,246,0.8)'
+  ctx.setLineDash([6, 6])
+  ctx.strokeRect(width * 0.2, height * 0.25, width * 0.35, height * 0.3)
+  ctx.setLineDash([])
+}
+
+const drawGlitchIntensity = (ctx: CanvasRenderingContext2D, width: number, height: number, frame: number) => {
+  const intensity = (Math.sin(frame / 10) + 1) / 2
+  ctx.fillStyle = `rgba(244,63,94,${0.15 + intensity * 0.25})`
+  ctx.fillRect(0, 0, width, height)
+}
+
+const VideoViewport = ({ kind, project, frame, resolution, overlays }: VideoViewportProps) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const clip = useMemo(() => getActiveClipAtFrame(project, frame), [project, frame])
+  const source = useMemo(() => project.sources.find((s) => s.id === clip?.sourceId), [clip?.sourceId, project.sources])
 
   useEffect(() => {
-    if (!engine || !project) return
-    engine
-      .renderFrame(selection.currentFrame, previewScale)
-      .then((bitmap) => {
-        const canvas = canvasRef.current
-        if (!canvas) return
-        canvas.width = bitmap.width
-        canvas.height = bitmap.height
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        ctx.drawImage(bitmap, 0, 0)
-      })
-      .catch(() => {})
-  }, [engine, project, selection.currentFrame, previewScale])
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const scale = resolution === 'full' ? 1 : resolution === 'half' ? 0.5 : 0.25
+    const width = Math.max(320, Math.round(project.settings.width * scale))
+    const height = Math.max(180, Math.round(project.settings.height * scale))
+    canvas.width = width
+    canvas.height = height
+    let ctx: CanvasRenderingContext2D | null = null
+    try {
+      ctx = canvas.getContext('2d')
+    } catch (err) {
+      console.error(err)
+    }
+    if (!ctx) return
 
-  const timecode = new Date(currentTimeSeconds * 1000).toISOString().substring(14, 23)
+    ctx.fillStyle = kind === 'moshed' ? '#0b1021' : '#0f172a'
+    ctx.fillRect(0, 0, width, height)
+
+    if (clip && source) {
+      const clipOffset = frame - clip.timelineStartFrame
+      const clipLocalFrame = clip.startFrame + clipOffset
+      const hue = (clipLocalFrame * 3) % 360
+      const gradient = ctx.createLinearGradient(0, 0, width, height)
+      gradient.addColorStop(0, `hsl(${hue}, 70%, 45%)`)
+      gradient.addColorStop(1, `hsl(${(hue + 60) % 360}, 60%, 30%)`)
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, width, height)
+
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'
+      ctx.fillRect(0, height - 50, width, 50)
+      ctx.fillStyle = 'white'
+      ctx.font = '14px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
+      ctx.fillText(`${source.originalName}`, 16, height - 26)
+      ctx.fillText(`Frame ${clipLocalFrame}`, width - 140, height - 26)
+    } else {
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.2)'
+      ctx.fillRect(0, 0, width, height)
+      ctx.fillStyle = 'white'
+      ctx.font = '14px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
+      ctx.fillText('No clip under playhead', 24, height / 2)
+    }
+
+    if (overlays.grid) drawGrid(ctx, width, height)
+    if (overlays.safeArea) drawSafeArea(ctx, width, height)
+    if (overlays.masks) drawMasks(ctx, width, height)
+    if (overlays.motionVectors) drawMotionVectors(ctx, width, height)
+    if (overlays.glitchIntensity) drawGlitchIntensity(ctx, width, height, frame)
+    if (overlays.timecode) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.7)'
+      ctx.fillRect(width - 150, 12, 138, 28)
+      ctx.fillStyle = 'white'
+      ctx.font = '14px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
+      ctx.fillText(formatTimecode(frame, project.timeline.fps), width - 140, 32)
+    }
+    if (overlays.clipName && clip && source) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.7)'
+      ctx.fillRect(12, 12, Math.min(width - 24, 220), 26)
+      ctx.fillStyle = 'white'
+      ctx.font = '13px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
+      ctx.fillText(source.originalName, 20, 30)
+    }
+  }, [clip, frame, kind, overlays.clipName, overlays.glitchIntensity, overlays.grid, overlays.masks, overlays.motionVectors, overlays.safeArea, overlays.timecode, project.settings.height, project.settings.width, project.timeline.fps, resolution, source])
+
+  return (
+    <div className="relative h-full w-full">
+      <canvas ref={canvasRef} className="h-full w-full object-contain" data-testid={`viewport-${kind}`} />
+    </div>
+  )
+}
+
+const CompareView = ({ project, frame, resolution, overlays }: { project: Project; frame: number; resolution: ViewerResolution; overlays: ViewerOverlays }) => (
+  <div className="grid h-full grid-cols-2 gap-[1px] bg-surface-900">
+    <VideoViewport kind="original" project={project} frame={frame} resolution={resolution} overlays={overlays} />
+    <VideoViewport kind="moshed" project={project} frame={frame} resolution={resolution} overlays={overlays} />
+  </div>
+)
+
+const ModeToggle = ({
+  mode,
+  onChange,
+  options,
+}: {
+  mode: ViewerMode
+  onChange: (mode: ViewerMode) => void
+  options: ViewerMode[]
+}) => (
+  <div className="flex items-center gap-2 rounded-md border border-surface-300/60 bg-surface-300/30 p-1">
+    {options.map((option) => (
+      <button
+        key={option}
+        onClick={() => onChange(option)}
+        className={`rounded px-3 py-[6px] text-xs uppercase tracking-[0.12em] ${
+          option === mode ? 'bg-accent text-black shadow' : 'text-slate-200 hover:bg-surface-100/20'
+        }`}
+      >
+        {option}
+      </button>
+    ))}
+  </div>
+)
+
+const Viewer = ({ project }: Props) => {
+  const {
+    transport,
+    viewer,
+    setViewerMode,
+    setViewerResolution,
+    setViewerOverlays,
+    setPlayState,
+    setTimelineFrame,
+  } = useProject()
+  const [overlayOpen, setOverlayOpen] = useState(false)
+  const currentTimelineFrame = Math.round(transport.currentTimelineFrame)
+  const activeClip: TimelineClip | null = useMemo(
+    () => getActiveClipAtFrame(project, currentTimelineFrame),
+    [project, currentTimelineFrame],
+  )
+  const timelineLastFrame = useMemo(() => timelineEndFrame(project.timeline), [project.timeline])
+  const playbackLabel = transport.playState === 'playing' ? 'Playing' : transport.playState === 'paused' ? 'Paused' : 'Stopped'
+
+  const step = (delta: number) => {
+    setPlayState('paused')
+    setTimelineFrame(Math.max(0, currentTimelineFrame + delta))
+  }
+
+  const onStop = () => {
+    setPlayState('stopped')
+    setTimelineFrame(0)
+  }
+
+  const togglePlay = () => {
+    setPlayState(transport.playState === 'playing' ? 'paused' : 'playing')
+  }
 
   return (
     <motion.div
@@ -57,93 +265,166 @@ const Viewer = ({ project }: Props) => {
       transition={{ duration: 0.26 }}
       className="relative overflow-hidden rounded-xl border border-surface-300/60 bg-surface-200/80 shadow-panel"
     >
-      <div className="flex items-center justify-between border-b border-surface-300/60 px-4 py-2 text-xs text-slate-400">
+      <div className="flex items-center justify-between border-b border-surface-300/60 px-4 py-3 text-xs text-slate-200">
         <div className="flex items-center gap-3">
-          <span className="uppercase tracking-[0.16em]">Viewer</span>
-          <span className="rounded-md border border-surface-300/60 px-2 py-1 font-mono text-[11px] text-slate-300">{timecode}</span>
+          <span className="text-xs uppercase tracking-[0.16em] text-slate-400">Viewer</span>
+          <ModeToggle mode={viewer.mode} onChange={setViewerMode} options={viewerModes} />
         </div>
-        <div className="flex items-center gap-2 text-[11px]">
-          <button
-            onClick={() => (playState === 'playing' ? pause() : play())}
-            className="rounded-md border border-surface-300/60 px-2 py-1 text-white transition hover:border-accent/70"
-          >
-            {playState === 'playing' ? 'Pause' : 'Play'}
-          </button>
-          <button
-            onClick={() => stop()}
-            className="rounded-md border border-surface-300/60 px-2 py-1 text-white transition hover:border-accent/70"
-          >
-            Stop
-          </button>
-          <button
-            onClick={() => stepBackward()}
-            className="rounded-md border border-surface-300/60 px-2 py-1 text-white transition hover:border-accent/70"
-          >
-            -1f
-          </button>
-          <button
-            onClick={() => stepForward()}
-            className="rounded-md border border-surface-300/60 px-2 py-1 text-white transition hover:border-accent/70"
-          >
-            +1f
-          </button>
-          <select
-            value={previewScale}
-            onChange={(e) => setPreviewScale(e.target.value as PreviewScale)}
-            className="rounded-md border border-surface-300/60 bg-surface-200/80 px-2 py-1 text-white"
-          >
-            <option value="full">Full</option>
-            <option value="half">Half</option>
-            <option value="quarter">Quarter</option>
-          </select>
-          <select
-            value={playbackMode}
-            onChange={(e) => setPlaybackMode(e.target.value as PlaybackMode)}
-            className="rounded-md border border-surface-300/60 bg-surface-200/80 px-2 py-1 text-white"
-          >
-            <option value="realTime">Real-time</option>
-            <option value="frameAccurate">Frame-accurate</option>
-          </select>
-          <span className="rounded-md border border-surface-300/60 px-2 py-1 text-slate-300">
-            {project.settings.width}x{project.settings.height} @ {project.settings.fps}fps
-          </span>
+        <div className="font-mono text-[13px] tracking-[0.12em] text-white">
+          {formatTimecode(currentTimelineFrame, project.timeline.fps)}
+        </div>
+        <div className="flex items-center gap-3 text-[11px]">
+          <div className="relative">
+            <button
+              onClick={() => setOverlayOpen((v) => !v)}
+              className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 text-white transition hover:border-accent/70"
+            >
+              <Layers className="h-4 w-4" /> Overlays
+            </button>
+            {overlayOpen && (
+              <div className="absolute right-0 top-10 z-20 w-52 rounded-md border border-surface-300/60 bg-surface-200/95 p-3 shadow-xl">
+                <div className="space-y-2">
+                  <OverlayToggle
+                    label="Safe area"
+                    checked={viewer.overlays.safeArea}
+                    onChange={(value) => setViewerOverlays({ safeArea: value })}
+                  />
+                  <OverlayToggle label="Grid" checked={viewer.overlays.grid} onChange={(value) => setViewerOverlays({ grid: value })} />
+                  <OverlayToggle
+                    label="Timecode"
+                    checked={viewer.overlays.timecode}
+                    onChange={(value) => setViewerOverlays({ timecode: value })}
+                  />
+                  <OverlayToggle
+                    label="Clip name"
+                    checked={viewer.overlays.clipName}
+                    onChange={(value) => setViewerOverlays({ clipName: value })}
+                  />
+                  <OverlayToggle
+                    label="Masks"
+                    checked={viewer.overlays.masks}
+                    onChange={(value) => setViewerOverlays({ masks: value })}
+                  />
+                  <OverlayToggle
+                    label="Motion vectors"
+                    checked={viewer.overlays.motionVectors}
+                    onChange={(value) => setViewerOverlays({ motionVectors: value })}
+                  />
+                  <OverlayToggle
+                    label="Glitch intensity"
+                    checked={viewer.overlays.glitchIntensity}
+                    onChange={(value) => setViewerOverlays({ glitchIntensity: value })}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 rounded-md border border-surface-300/60 px-2 py-1">
+            <Gauge className="h-4 w-4 text-slate-400" />
+            <select
+              value={viewer.resolution}
+              onChange={(e) => setViewerResolution(e.target.value as ViewerResolution)}
+              className="bg-transparent text-white focus:outline-none"
+            >
+              <option value="full">Full</option>
+              <option value="half">1/2</option>
+              <option value="quarter">1/4</option>
+            </select>
+            <span className="rounded-full bg-surface-100/40 px-2 py-[2px] text-[11px] text-slate-300">{resolutionLabel[viewer.resolution]} res</span>
+          </div>
         </div>
       </div>
-        <div className="relative flex h-[320px] items-center justify-center overflow-hidden bg-gradient-to-br from-surface-200 to-surface-300">
-          {activeClip && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              {activeThumbnail && (
-                <img src={activeThumbnail} alt="Active frame preview" className="h-full w-full object-contain" />
-              )}
-              {!activeThumbnail && thumbnailLoading && (
-                <div className="flex h-full w-full items-center justify-center bg-surface-200/80 text-xs text-slate-400">
-                  Loading preview…
-                </div>
-              )}
-              {!activeThumbnail && !thumbnailLoading && (
-                <div className="flex h-full w-full items-center justify-center bg-surface-200/80 text-xs text-slate-400">
-                  Preview unavailable
-                </div>
-              )}
-            </div>
+
+      <div className="space-y-3 p-4">
+        <div className="relative aspect-video overflow-hidden rounded-xl border border-surface-300/60 bg-black/80" data-testid="viewer-preview">
+          {viewer.mode === 'compare' && (
+            <CompareView
+              project={project}
+              frame={currentTimelineFrame}
+              resolution={viewer.resolution}
+              overlays={viewer.overlays}
+            />
+          )}
+          {viewer.mode === 'original' && (
+            <VideoViewport
+              kind="original"
+              project={project}
+              frame={currentTimelineFrame}
+              resolution={viewer.resolution}
+              overlays={viewer.overlays}
+            />
+          )}
+          {viewer.mode === 'moshed' && (
+            <VideoViewport
+              kind="moshed"
+              project={project}
+              frame={currentTimelineFrame}
+              resolution={viewer.resolution}
+              overlays={viewer.overlays}
+            />
           )}
           {!activeClip && (
-            <div className="pointer-events-none relative z-10 flex h-full w-full items-center justify-center px-6 text-center text-sm text-slate-400">
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-surface-900/40 px-6 text-center text-sm text-slate-300">
               {project.timeline.clips.length > 0
                 ? 'No clip under playhead. Move the playhead over a clip on the timeline.'
                 : 'No clips in project yet. Add sources and place clips on the timeline.'}
             </div>
           )}
-          <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain opacity-70" />
-          {activeClip && activeSource && (
-            <div className="absolute bottom-3 left-3 z-10 rounded-md border border-surface-300/60 bg-surface-900/60 px-3 py-1 text-xs text-white">
-              {activeSource.originalName} • Frame {clipLocalFrame ?? currentTimelineFrame}
-            </div>
-          )}
-          <div className="absolute bottom-3 right-3 rounded-md border border-surface-300/60 bg-surface-200/80 px-3 py-1 text-xs text-slate-300">
-            {lastProgress.phase === 'idle' ? 'Idle' : `${lastProgress.phase} ${(lastProgress.progress * 100).toFixed(0)}%`}
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-surface-300/60 bg-surface-300/40 px-4 py-3 text-xs text-slate-200">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onStop}
+              className="rounded-md border border-surface-300/60 p-2 text-white transition hover:border-accent/70"
+              aria-label="Stop"
+            >
+              <Square className="h-4 w-4" />
+            </button>
+            <button
+              onClick={togglePlay}
+              className="rounded-md border border-surface-300/60 p-2 text-white transition hover:border-accent/70"
+              aria-label={transport.playState === 'playing' ? 'Pause' : 'Play'}
+            >
+              {transport.playState === 'playing' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            </button>
+            <button
+              onClick={() => step(-1)}
+              className="rounded-md border border-surface-300/60 p-2 text-white transition hover:border-accent/70"
+              aria-label="Step backward"
+            >
+              <StepBack className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => step(1)}
+              className="rounded-md border border-surface-300/60 p-2 text-white transition hover:border-accent/70"
+              aria-label="Step forward"
+            >
+              <StepForward className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setTimelineFrame(0)}
+              className="rounded-md border border-surface-300/60 p-2 text-white transition hover:border-accent/70"
+              aria-label="Jump to start"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setTimelineFrame(timelineLastFrame)}
+              className="rounded-md border border-surface-300/60 p-2 text-white transition hover:border-accent/70"
+              aria-label="Jump to end"
+            >
+              <RotateCw className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] text-slate-300">
+            <span className="rounded-full border border-surface-300/60 px-3 py-1">{playbackLabel}</span>
+            <span className="rounded-full border border-surface-300/60 px-3 py-1">
+              Preview {resolutionLabel[viewer.resolution]}
+            </span>
           </div>
         </div>
+      </div>
     </motion.div>
   )
 }

@@ -85,6 +85,7 @@ const Timeline = ({ project }: Props) => {
     selection,
     selectClip,
     setCurrentFrame,
+    setTimelineFrame,
     setTimeRange,
     placeClipFromSource,
     moveClip,
@@ -92,6 +93,7 @@ const Timeline = ({ project }: Props) => {
     addTrack,
     removeTrack,
     reorderTrack,
+    setPlayState,
   } = useProject()
   const [zoom, setZoom] = useState(2)
   const [dragClip, setDragClip] = useState<{ id: string; startX: number; original: number } | null>(null)
@@ -115,7 +117,8 @@ const Timeline = ({ project }: Props) => {
       if (playheadDrag && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect()
         const px = (event.clientX - rect.left) / zoom
-        setCurrentFrame(Math.max(0, Math.round(px)))
+        setPlayState('paused')
+        setTimelineFrame(Math.max(0, Math.round(px)))
       }
     }
     const onUp = () => {
@@ -130,7 +133,7 @@ const Timeline = ({ project }: Props) => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [dragClip, trimState, zoom, moveClip, trimClip, playheadDrag, setCurrentFrame])
+  }, [dragClip, trimState, zoom, moveClip, trimClip, playheadDrag, setPlayState, setTimelineFrame])
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>, trackId: string) => {
     event.preventDefault()
@@ -145,7 +148,8 @@ const Timeline = ({ project }: Props) => {
     const rect = containerRef.current?.getBoundingClientRect()
     const px = (event.clientX - (rect?.left ?? 0)) / zoom
     selectClip(null)
-    setCurrentFrame(Math.max(0, Math.round(px)))
+    setPlayState('paused')
+    setTimelineFrame(Math.max(0, Math.round(px)))
     setPlayheadDrag(true)
     setRangeStart(px)
     setTimeRange(null)
@@ -158,7 +162,7 @@ const Timeline = ({ project }: Props) => {
     const start = Math.floor(Math.min(rangeStart, px))
     const end = Math.ceil(Math.max(rangeStart, px))
     setTimeRange({ startFrame: start, endFrame: end })
-    setCurrentFrame(end)
+    setTimelineFrame(end)
     setRangeStart(null)
   }
 

@@ -48,8 +48,9 @@ describe('Viewer rendering', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByAltText(/Active frame preview/i)).toBeInTheDocument()
-      expect(screen.getAllByAltText(/thumbnail/i).length).toBeGreaterThan(0)
+      const preview = screen.getByTestId('viewer-preview')
+      expect(preview.querySelector('canvas')).toBeInTheDocument()
+      expect(screen.getByText(/00:00:00:00/)).toBeInTheDocument()
     })
   })
 

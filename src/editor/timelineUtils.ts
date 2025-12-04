@@ -56,9 +56,11 @@ export const timelineEndFrame = (timeline: Timeline) => {
   }, 0)
 }
 
+export const computeTimelineLastFrame = (timeline: Timeline) => timelineEndFrame(timeline)
+
 export const getActiveClipAtFrame = (project: { timeline: Timeline }, frame: number): TimelineClip | null => {
   if (!project.timeline.clips.length) return null
-  const trackOrder = new Map(project.timeline.tracks.map((track) => [track.id, track.index]))
+  const trackById = new Map(project.timeline.tracks.map((track) => [track.id, track]))
 
   const matches = project.timeline.clips.filter((clip) => {
     const clipStart = clip.timelineStartFrame
@@ -69,10 +71,12 @@ export const getActiveClipAtFrame = (project: { timeline: Timeline }, frame: num
   if (!matches.length) return null
 
   return matches.reduce((top, candidate) => {
-    const currentIndex = trackOrder.get(top.trackId) ?? -Infinity
-    const candidateIndex = trackOrder.get(candidate.trackId) ?? -Infinity
-    return candidateIndex >= currentIndex ? candidate : top
-  })
+    const candidateTrack = trackById.get(candidate.trackId)
+    const topTrack = top ? trackById.get(top.trackId) : null
+    if (!topTrack) return candidate
+    if (!candidateTrack) return top
+    return candidateTrack.index > topTrack.index ? candidate : top
+  }, null as TimelineClip | null)
 }
 
 export const deleteTrackAndClips = (project: Project, trackId: string): Project => {
