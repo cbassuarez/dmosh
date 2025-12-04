@@ -49,6 +49,19 @@
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
     "vitepress": "^1.6.3",
-    "vitest": "^4.0.15"
+    "vitest": "^4.0.15",
+    "rollup": "4.18.0",
+
+      "@rollup/rollup-darwin-arm64": "4.18.0",
+      "@rollup/rollup-darwin-x64": "4.18.0",
+
+      "@rollup/rollup-linux-arm64-gnu": "4.18.0",
+      "@rollup/rollup-linux-arm64-musl": "4.18.0",
+      "@rollup/rollup-linux-x64-gnu": "4.18.0",
+      "@rollup/rollup-linux-x64-musl": "4.18.0",
+
+      "@rollup/rollup-win32-arm64-msvc": "4.18.0",
+      "@rollup/rollup-win32-ia32-msvc": "4.18.0",
+      "@rollup/rollup-win32-x64-msvc": "4.18.0"
   }
 }

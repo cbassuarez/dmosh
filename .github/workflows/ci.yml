@@ -35,16 +35,16 @@ jobs:
         run: npm run lint --if-present
 
       - name: Test
-        run: npm run test:ci
+        run: ROLLUP_DISABLE_NATIVE=1 npm run test:ci
 
       - name: Expose version as env
         run: node -p "'VITE_DMOSH_VERSION=' + require('./package.json').version" >> $GITHUB_ENV
 
       - name: Build app
-        run: npm run build:spa
+        run: ROLLUP_DISABLE_NATIVE=1 npm run build:spa
 
       - name: Build docs
-        run: npm run docs:build
+        run: ROLLUP_DISABLE_NATIVE=1 npm run docs:build
 
       - name: Copy docs into dist
         run: |
