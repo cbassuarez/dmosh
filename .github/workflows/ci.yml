@@ -38,8 +38,7 @@ jobs:
         run: npm run test:ci
 
       - name: Expose version as env
-        id: version
-        run: echo "VITE_DMOSH_VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
+        run: node -p "'VITE_DMOSH_VERSION=' + require('./package.json').version" >> $GITHUB_ENV
 
       - name: Build app
         run: npm run build:spa
