@@ -31,14 +31,18 @@ const handleResize = (
   return { left: current.left, right: next, center }
 }
 
-const EditorShell = () => {
+type Props = {
+  onOpenNewProject: () => void
+}
+
+const EditorShell = ({ onOpenNewProject }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState<null | 'left' | 'right'>(null)
   const [open, setOpen] = useState({ left: true, right: true })
   const [sizes, setSizes] = useState({ left: 280, right: 320, center: 720 })
   const [showExport, setShowExport] = useState(false)
 
-  const { project, exportProject, importSources, newProject } = useProject()
+  const { project, exportProject, importSources } = useProject()
   const { status } = useEngine()
 
   const fileInput = useRef<HTMLInputElement>(null)
@@ -94,7 +98,7 @@ const EditorShell = () => {
             <Download className="h-4 w-4" /> Export Project JSON
           </button>
           <button
-            onClick={newProject}
+            onClick={onOpenNewProject}
             className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
           >
             <Plus className="h-4 w-4" /> New
