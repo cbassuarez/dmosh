@@ -1,5 +1,6 @@
 // src/components/layout/TopBar.tsx
 import { motion } from "framer-motion";
+import { DMOSH_VERSION } from "../../version";
 
 export function TopBar() {
   return (
@@ -12,7 +13,7 @@ export function TopBar() {
       <div className="text-sm font-semibold tracking-wide text-slate-200">
         dmosh
         <span className="ml-2 text-xs font-normal text-slate-500">
-          v0.1 – datamosh lab
+          v{DMOSH_VERSION} – datamosh lab
         </span>
       </div>
       <div className="flex items-center gap-3 text-xs text-slate-400">
