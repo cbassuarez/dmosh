@@ -17,7 +17,7 @@ export function SiteNav() {
 
   return (
     <motion.header
-      className="sticky top-0 z-20 border-b border-dm-border bg-black/70 backdrop-blur"
+      className="sticky top-0 z-20 border-b border-slate-800 bg-black/70 backdrop-blur"
       initial={{ y: -12, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 220, damping: 24 }}
@@ -45,8 +45,8 @@ export function SiteNav() {
                   [
                     "px-2 py-1 rounded-md transition",
                     isActive
-                      ? "bg-dm-panel text-slate-100"
-                      : "hover:bg-dm-panel/60 hover:text-slate-100",
+                      ? "bg-slate-900/80 text-slate-100"
+                      : "hover:bg-slate-900/60 hover:text-slate-100",
                   ].join(" ")
                 }
               >
@@ -56,7 +56,7 @@ export function SiteNav() {
           )}
           <a
             href="https://github.com/cbassuarez/dmosh"
-            className="rounded-md border border-dm-border px-2 py-1 text-xs text-slate-300 hover:border-dm-accent hover:text-dm-accent"
+            className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-teal-400 hover:text-teal-300"
           >
             GitHub
           </a>
