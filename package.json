@@ -6,10 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:spa": "npm run build && node scripts/copy-404.cjs",
+    "build:with-version": "VITE_DMOSH_VERSION=$npm_package_version npm run build:spa",
     "lint": "eslint .",
     "test": "vitest",
     "test:ci": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -17,6 +22,7 @@
     "framer-motion": "^12.23.25",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-router-dom": "^7.6.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
@@ -42,6 +48,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
+    "vitepress": "^1.6.3",
     "vitest": "^4.0.15"
   }
 }

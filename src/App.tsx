@@ -1,20 +1,19 @@
-// src/App.tsx
-import { AppShell } from "./components/layout/AppShell";
-import { Sidebar } from "./components/layout/Sidebar";
-import { VideoViewer } from "./components/viewer/VideoViewer";
-import { TimelineView } from "./components/timeline/TimelineView";
+import { Route, Routes } from "react-router-dom";
+import { LandingPage } from "./pages/LandingPage";
+import { EditorPage } from "./pages/EditorPage";
+import { SpecPage } from "./pages/SpecPage";
+import { ChangelogPage } from "./pages/ChangelogPage";
+import { AboutPage } from "./pages/AboutPage";
 
 export default function App() {
   return (
-    <AppShell
-      sidebar={<Sidebar />}
-      main={
-        <div className="flex h-full flex-col">
-          <VideoViewer />
-          <TimelineView />
-        </div>
-      }
-    />
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/app" element={<EditorPage />} />
+      <Route path="/spec" element={<SpecPage />} />
+      <Route path="/changelog" element={<ChangelogPage />} />
+      <Route path="/about" element={<AboutPage />} />
+      <Route path="*" element={<LandingPage />} />
+    </Routes>
   );
 }
-

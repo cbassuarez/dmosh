@@ -1,3 +1,9 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,12 +13,39 @@
 }
 
 body {
+  @apply bg-dm-bg text-slate-100 antialiased font-sans;
   margin: 0;
-  color: #e5e7eb; /* roughly text-slate-100 */
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
 
 #root {
-  min-height: 100vh;
+  @apply min-h-screen;
+}
+
+.dm-hero-title span {
+  display: inline-block;
+}
+
+.dm-code {
+  @apply font-mono text-xs rounded-md border border-dm-border bg-black/60 px-2 py-1;
+}
+
+code,
+pre {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.font-displayA {
+  font-family: "DM Sans", "DM Display A", system-ui, sans-serif;
+}
+
+.font-displayB {
+  font-family: "Space Grotesk", "DM Display B", system-ui, sans-serif;
+}
+
+.font-displayC {
+  font-family: "Playfair Display", "DM Display C", system-ui, sans-serif;
+}
+
+.font-displayD {
+  font-family: "JetBrains Mono", "DM Display D", ui-monospace, monospace;
 }

@@ -37,8 +37,20 @@ jobs:
       - name: Test
         run: npm run test:ci
 
-      - name: Build
-        run: npm run build
+      - name: Expose version as env
+        id: version
+        run: echo "VITE_DMOSH_VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
+
+      - name: Build app
+        run: npm run build:spa
+
+      - name: Build docs
+        run: npm run docs:build
+
+      - name: Copy docs into dist
+        run: |
+          mkdir -p dist/docs
+          cp -R docs/.vitepress/dist/* dist/docs/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
