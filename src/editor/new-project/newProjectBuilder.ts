@@ -16,6 +16,8 @@ export type WizardMediaItem = {
   profile?: NormalizedProfile
   durationFrames?: number
   normalizationError?: NormalizationError
+  previewUrl?: string
+  thumbnailUrl?: string
 }
 
 export type WizardSettings = {
@@ -53,6 +55,8 @@ export const buildProjectFromWizard = (state: WizardState): Project => {
     normalizedProfile: item.profile,
     durationFrames: item.durationFrames ?? Math.max(1, Math.round(state.settings.fps * 5)),
     normalizationError: item.normalizationError,
+    previewUrl: item.previewUrl ?? '',
+    thumbnailUrl: item.thumbnailUrl,
   }))
 
   const track: TimelineTrack = { id: 'track-1', kind: 'video', index: 0, name: 'Video 1' }

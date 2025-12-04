@@ -217,6 +217,7 @@ const NewProjectModal = ({ isOpen, onClose, onCreate }: Props) => {
       durationFrames: undefined,
       profile: undefined,
       status: 'analyzing',
+      previewUrl: URL.createObjectURL(file),
       file,
     }))
     setMedia((prev) => [...prev, ...incoming])

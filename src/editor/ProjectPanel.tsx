@@ -12,17 +12,19 @@ const SectionHeader = ({ title }: { title: string }) => (
 
 const Thumbnail = ({ source, size = 'md' }: { source?: Source; size?: 'sm' | 'md' }) => {
   const { url, isLoading } = useSourceThumbnail(source)
-  const dimensions = size === 'sm' ? 'h-12 w-16' : 'h-16 w-28'
+  const dimensions = size === 'sm' ? 'h-16' : 'h-20'
+
+  if (isLoading) {
+    return <div className={`${dimensions} w-full animate-pulse rounded-md bg-surface-400/40`} />
+  }
+
+  if (!url) {
+    return <div className={`${dimensions} w-full rounded-md bg-surface-500/50`} />
+  }
 
   return (
-    <div className={`flex-shrink-0 overflow-hidden rounded-md bg-surface-400/40 ${dimensions}`}>
-      {url && <img src={url} alt={`${source?.originalName ?? 'Source'} thumbnail`} className="h-full w-full object-cover" />}
-      {!url && isLoading && <div className="h-full w-full animate-pulse bg-surface-500/60" />}
-      {!url && !isLoading && (
-        <div className="flex h-full w-full items-center justify-center text-[10px] uppercase tracking-[0.12em] text-slate-500">
-          No preview
-        </div>
-      )}
+    <div className={`${dimensions} w-full overflow-hidden rounded-md bg-black/60`}>
+      <div className="h-full w-full bg-cover bg-center" style={{ backgroundImage: `url(${url})` }} />
     </div>
   )
 }
@@ -31,17 +33,15 @@ const SourceCard = ({ source, onDragStart }: { source: Source; onDragStart: Drag
   <div
     draggable
     onDragStart={onDragStart}
-    className="flex cursor-grab items-center gap-3 rounded-lg border border-surface-300/60 bg-surface-300/60 p-3 transition hover:-translate-y-[1px] hover:border-accent/60"
+    className="space-y-2 rounded-lg border border-surface-300/60 bg-surface-300/60 p-3 transition hover:-translate-y-[1px] hover:border-accent/60"
   >
     <Thumbnail source={source} size="sm" />
-    <div className="flex-1">
-      <div className="flex items-center justify-between text-xs text-slate-300">
-        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-slate-400">{source.id}</span>
-        <span className="text-slate-400">{Math.round(source.durationFrames)}f</span>
-      </div>
-      <p className="mt-1 text-sm text-white">{source.originalName}</p>
-      <p className="text-xs text-slate-400">Drag to timeline to place</p>
+    <div className="flex items-center justify-between text-xs text-slate-300">
+      <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-slate-400">{source.id}</span>
+      <span className="text-slate-400">{Math.round(source.durationFrames)}f</span>
     </div>
+    <p className="text-sm text-white">{source.originalName}</p>
+    <p className="text-xs text-slate-400">Drag to timeline to place</p>
   </div>
 )
 
@@ -50,9 +50,9 @@ const PlacedClipCard = ({ clip, source }: { clip: TimelineClip; source?: Source 
   return (
     <motion.div whileHover={{ scale: 1.01 }} className="flex items-center gap-3 rounded-lg border border-surface-300/60 bg-surface-300/60 p-3">
       <div className="flex-shrink-0 overflow-hidden rounded-md bg-surface-400/40">
-        {url && <img src={url} alt={`${source?.originalName ?? clip.id} thumbnail`} className="h-16 w-28 object-cover" />}
-        {!url && isLoading && <div className="h-16 w-28 animate-pulse bg-surface-500/60" />}
-        {!url && !isLoading && <div className="flex h-16 w-28 items-center justify-center text-[10px] uppercase tracking-[0.12em] text-slate-500">No preview</div>}
+        {isLoading && <div className="h-16 w-28 animate-pulse bg-surface-500/60" />}
+        {!isLoading && !url && <div className="flex h-16 w-28 items-center justify-center text-[10px] uppercase tracking-[0.12em] text-slate-500">No preview</div>}
+        {url && <div className="h-16 w-28 bg-cover bg-center" style={{ backgroundImage: `url(${url})` }} />}
       </div>
       <div className="flex-1">
         <div className="flex items-center justify-between text-xs text-slate-300">

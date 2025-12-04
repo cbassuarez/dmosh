@@ -119,52 +119,40 @@ const drawGlitchIntensity = (ctx: CanvasRenderingContext2D, width: number, heigh
 }
 
 const VideoViewport = ({ kind, project, frame, resolution, overlays }: VideoViewportProps) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const overlayRef = useRef<HTMLCanvasElement>(null)
+
   const clip = useMemo(() => getActiveClipAtFrame(project, frame), [project, frame])
   const source = useMemo(() => project.sources.find((s) => s.id === clip?.sourceId), [clip?.sourceId, project.sources])
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    if (!videoRef.current || !clip || !source?.previewUrl) return
+    const clipOffset = frame - clip.timelineStartFrame
+    const clipLocalFrame = clip.startFrame + clipOffset
+    const timeSeconds = clipLocalFrame / project.timeline.fps
+    const video = videoRef.current
+    if (Number.isFinite(timeSeconds) && Math.abs(video.currentTime - timeSeconds) > 1 / project.timeline.fps) {
+      try {
+        video.currentTime = timeSeconds
+      } catch {
+        /* noop */
+      }
+    }
+  }, [clip, frame, project.timeline.fps, source?.previewUrl])
+
+  useEffect(() => {
+    const canvas = overlayRef.current
+    const container = containerRef.current
+    if (!canvas || !container) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
     const scale = resolution === 'full' ? 1 : resolution === 'half' ? 0.5 : 0.25
-    const width = Math.max(320, Math.round(project.settings.width * scale))
-    const height = Math.max(180, Math.round(project.settings.height * scale))
+    const width = Math.max(container.clientWidth, Math.round(project.settings.width * scale))
+    const height = Math.max(container.clientHeight, Math.round(project.settings.height * scale))
     canvas.width = width
     canvas.height = height
-    let ctx: CanvasRenderingContext2D | null = null
-    try {
-      ctx = canvas.getContext('2d')
-    } catch (err) {
-      console.error(err)
-    }
-    if (!ctx) return
-
-    ctx.fillStyle = kind === 'moshed' ? '#0b1021' : '#0f172a'
-    ctx.fillRect(0, 0, width, height)
-
-    if (clip && source) {
-      const clipOffset = frame - clip.timelineStartFrame
-      const clipLocalFrame = clip.startFrame + clipOffset
-      const hue = (clipLocalFrame * 3) % 360
-      const gradient = ctx.createLinearGradient(0, 0, width, height)
-      gradient.addColorStop(0, `hsl(${hue}, 70%, 45%)`)
-      gradient.addColorStop(1, `hsl(${(hue + 60) % 360}, 60%, 30%)`)
-      ctx.fillStyle = gradient
-      ctx.fillRect(0, 0, width, height)
-
-      ctx.fillStyle = 'rgba(0,0,0,0.35)'
-      ctx.fillRect(0, height - 50, width, 50)
-      ctx.fillStyle = 'white'
-      ctx.font = '14px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
-      ctx.fillText(`${source.originalName}`, 16, height - 26)
-      ctx.fillText(`Frame ${clipLocalFrame}`, width - 140, height - 26)
-    } else {
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.2)'
-      ctx.fillRect(0, 0, width, height)
-      ctx.fillStyle = 'white'
-      ctx.font = '14px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
-      ctx.fillText('No clip under playhead', 24, height / 2)
-    }
+    ctx.clearRect(0, 0, width, height)
 
     if (overlays.grid) drawGrid(ctx, width, height)
     if (overlays.safeArea) drawSafeArea(ctx, width, height)
@@ -185,11 +173,27 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays }: VideoView
       ctx.font = '13px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
       ctx.fillText(source.originalName, 20, 30)
     }
-  }, [clip, frame, kind, overlays.clipName, overlays.glitchIntensity, overlays.grid, overlays.masks, overlays.motionVectors, overlays.safeArea, overlays.timecode, project.settings.height, project.settings.width, project.timeline.fps, resolution, source])
+  }, [clip, frame, overlays.clipName, overlays.glitchIntensity, overlays.grid, overlays.masks, overlays.motionVectors, overlays.safeArea, overlays.timecode, project.settings.height, project.settings.width, project.timeline.fps, resolution, source])
+
+  if (!clip || !source?.previewUrl) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-xs text-slate-400" data-testid={`viewport-${kind}`}>
+        No clip under playhead
+      </div>
+    )
+  }
 
   return (
-    <div className="relative h-full w-full">
-      <canvas ref={canvasRef} className="h-full w-full object-contain" data-testid={`viewport-${kind}`} />
+    <div ref={containerRef} className="relative h-full w-full" data-testid={`viewport-${kind}`}>
+      <video
+        ref={videoRef}
+        src={source.previewUrl}
+        muted
+        playsInline
+        preload="metadata"
+        className="h-full w-full bg-black object-contain"
+      />
+      <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
     </div>
   )
 }

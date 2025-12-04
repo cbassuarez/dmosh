@@ -41,11 +41,11 @@ const TimelineClipBlock = ({ clip, source, zoom, isSelected, onSelect, onTrimSta
       } px-3 py-2`}
       onMouseDown={onSelect}
     >
-      <div className="pointer-events-none absolute inset-0 opacity-75">
-        {url && <img src={url} alt={`${source?.originalName ?? clip.sourceId} thumbnail`} className="h-full w-full object-cover" />}
-        {!url && isLoading && <div className="h-full w-full animate-pulse bg-surface-400/50" />}
-        {!url && !isLoading && <div className="h-full w-full bg-surface-400/30" />}
-        <div className="absolute inset-0 bg-gradient-to-r from-surface-900/50 via-surface-900/10 to-surface-900/50" />
+      <div className="pointer-events-none absolute inset-0">
+        {isLoading && <div className="h-full w-full animate-pulse bg-surface-400/50" />}
+        {!isLoading && url && <div className="h-full w-full bg-cover bg-center" style={{ backgroundImage: `url(${url})` }} />}
+        {!isLoading && !url && <div className="h-full w-full bg-surface-500/60" />}
+        <div className="absolute inset-0 bg-black/35" />
       </div>
       <div className="relative z-10 flex items-center justify-between text-xs text-white">
         <span>{source?.originalName ?? clip.id}</span>
