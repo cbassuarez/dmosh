@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import type { DragEvent } from 'react'
+import type { DragEvent, DragEventHandler } from 'react'
 import { Operation, Project, Source, TimelineClip } from '../engine/types'
 import AutomationCurvesPanel from './AutomationCurvesPanel'
 import { useSourceThumbnail } from './thumbnailService'
@@ -27,7 +27,7 @@ const Thumbnail = ({ source, size = 'md' }: { source?: Source; size?: 'sm' | 'md
   )
 }
 
-const SourceCard = ({ source, onDragStart }: { source: Source; onDragStart: DragEvent<HTMLDivElement> }) => (
+const SourceCard = ({ source, onDragStart }: { source: Source; onDragStart: DragEventHandler<HTMLDivElement> }) => (
   <div
     draggable
     onDragStart={onDragStart}

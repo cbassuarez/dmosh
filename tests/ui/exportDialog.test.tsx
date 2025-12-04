@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ExportDialog } from '../../src/editor/ExportDialog'
 import { PreviewScale, RenderSettings } from '../../src/engine/engine'
 import { Project } from '../../src/engine/types'
@@ -31,10 +31,17 @@ vi.mock('../../src/engine/worker/workerClient', () => ({
 describe('ExportDialog', () => {
   let onClose: () => void
   let project: Project
+  let anchorClickSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     onClose = vi.fn()
     project = JSON.parse(JSON.stringify(baseProject))
+    mockEngine.exportVideo.mockClear()
+    anchorClickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    anchorClickSpy.mockRestore()
   })
 
   it('constructs RenderSettings based on UI', async () => {
@@ -44,19 +51,27 @@ describe('ExportDialog', () => {
     fireEvent.click(screen.getByLabelText('4K'))
     fireEvent.click(screen.getByText('Start export'))
 
-    expect(mockEngine.exportVideo).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(mockEngine.exportVideo).toHaveBeenCalled()
+    })
+
     const [settings] = mockEngine.exportVideo.mock.calls[0] as [RenderSettings]
     expect(settings.preset).toBe('web-webm')
     expect(settings.resolution).toEqual({ kind: 'explicit', width: 3840, height: 2160 })
   })
 
-  it('respects preview scale option', () => {
+  it('respects preview scale option', async () => {
     render(<ExportDialog project={project} isOpen onClose={onClose} />)
     fireEvent.click(screen.getByLabelText('Use preview scale'))
     fireEvent.change(screen.getAllByDisplayValue('Full')[0], { target: { value: 'quarter' as PreviewScale } })
     fireEvent.click(screen.getByText('Start export'))
 
-    const [settings] = mockEngine.exportVideo.mock.calls.pop() as [RenderSettings]
+    const lastCall = await waitFor(() => {
+      const call = mockEngine.exportVideo.mock.calls[mockEngine.exportVideo.mock.calls.length - 1]
+      if (!call) throw new Error('Export video not called yet')
+      return call as [RenderSettings]
+    })
+    const [settings] = lastCall
     expect(settings.resolution).toEqual({ kind: 'inheritPreview', previewScale: 'quarter' })
   })
 })
