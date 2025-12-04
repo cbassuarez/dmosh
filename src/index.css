@@ -6,11 +6,13 @@
   color-scheme: dark;
 }
 
-/* Let the React root container set the background; keep text/AA here */
 body {
-  @apply text-slate-100 antialiased;
+  margin: 0;
+  color: #e5e7eb; /* roughly text-slate-100 */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 #root {
-  @apply min-h-screen;
+  min-height: 100vh;
 }
