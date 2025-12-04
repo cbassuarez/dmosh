@@ -1,5 +1,4 @@
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { motion } from "framer-motion";
 
 const links = [
   { to: "/app", label: "App" },
@@ -13,18 +12,12 @@ export function SiteNav() {
   const location = useLocation();
   const isEditor = location.pathname.startsWith("/app");
 
-  // Hide marketing nav on the editor route; editor has its own focused chrome
+  // Don't show marketing nav on the editor
   if (isEditor) return null;
 
   return (
-    <motion.header
-      className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/90 backdrop-blur"
-      initial={{ y: -16, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ type: "spring", stiffness: 220, damping: 24 }}
-    >
+    <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 text-sm">
-        {/* Brand */}
         <Link to="/" className="flex items-baseline gap-2">
           <span className="text-sm font-semibold tracking-wide text-slate-100">
             dmosh
@@ -33,8 +26,6 @@ export function SiteNav() {
             datamosh lab
           </span>
         </Link>
-
-        {/* Nav links */}
         <nav className="flex items-center gap-4 text-xs text-slate-300">
           {links.map((link) =>
             link.external ? (
@@ -70,6 +61,7 @@ export function SiteNav() {
           </a>
         </nav>
       </div>
-    </motion.header>
+    </header>
   );
 }
+
