@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 import { MemoryRouter } from 'react-router-dom'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import EditorPage from '../../src/pages/EditorPage'
 import { ProjectProvider } from '../../src/shared/hooks/useProject'
 import { Project } from '../../src/engine/types'
@@ -23,7 +23,7 @@ describe('Viewer rendering', () => {
     localStorage.clear()
   })
 
-  it('shows a visual preview when a clip exists under the playhead', () => {
+  it('shows a visual preview when a clip exists under the playhead', async () => {
     const project: Project = {
       ...baseProject,
       sources: [
@@ -47,8 +47,10 @@ describe('Viewer rendering', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByAltText(/Active frame preview/i)).toBeInTheDocument()
-    expect(screen.getAllByAltText(/thumbnail/i).length).toBeGreaterThan(0)
+    await waitFor(() => {
+      expect(screen.getByAltText(/Active frame preview/i)).toBeInTheDocument()
+      expect(screen.getAllByAltText(/thumbnail/i).length).toBeGreaterThan(0)
+    })
   })
 
   it('shows a helpful empty state when no clips exist', () => {
