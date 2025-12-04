@@ -1,13 +1,44 @@
+import { useEffect, useState } from 'react'
 import EditorShell from '../editor/EditorShell'
-import NewOpenPanel from '../editor/NewOpenPanel'
+import NewProjectModal from '../editor/new-project/NewProjectModal'
+import OnboardingLanding from '../editor/OnboardingLanding'
 import { useProject } from '../shared/hooks/useProject'
 
 const EditorPage = () => {
-  const { project } = useProject()
+  const { project, setProject, loadProjectFromFile } = useProject()
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    if (!project && !dismissed) {
+      setNewProjectOpen(true)
+    }
+  }, [project, dismissed])
+
+  const handleClose = () => {
+    setNewProjectOpen(false)
+    setDismissed(true)
+  }
+
+  const openModal = () => {
+    setDismissed(false)
+    setNewProjectOpen(true)
+  }
+
+  const handleCreate = (nextProject: Parameters<typeof setProject>[0]) => {
+    setProject(nextProject)
+    setDismissed(false)
+    setNewProjectOpen(false)
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-10">
-      {project ? <EditorShell /> : <NewOpenPanel />}
+      {project ? (
+        <EditorShell onOpenNewProject={openModal} />
+      ) : (
+        <OnboardingLanding onOpenNewProject={openModal} onOpenProjectFile={loadProjectFromFile} />
+      )}
+      <NewProjectModal isOpen={newProjectOpen} onClose={handleClose} onCreate={handleCreate} />
     </div>
   )
 }
