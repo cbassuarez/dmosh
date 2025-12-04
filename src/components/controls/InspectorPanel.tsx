@@ -19,7 +19,7 @@ export function InspectorPanel() {
             <h2 className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-slate-500">
               Project
             </h2>
-            <div className="rounded border border-dm-border bg-black/40 p-2">
+            <div className="rounded border border-slate-800 bg-black/40 p-2">
               <div className="font-mono text-[0.7rem]">{project.name}</div>
               <div className="mt-1 text-[0.65rem] text-slate-500">
                 {project.sources.length} source(s), {project.operations.length} operation(s)
@@ -31,7 +31,7 @@ export function InspectorPanel() {
             <h2 className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-slate-500">
               Selection
             </h2>
-            <div className="rounded border border-dm-border bg-black/40 p-2 text-[0.65rem]">
+            <div className="rounded border border-slate-800 bg-black/40 p-2 text-[0.65rem]">
               <div>Playhead: {selection.playheadSec.toFixed(2)}s</div>
               <div>Clip: {selection.selectedClipId ?? "—"}</div>
               <div>Mask: {selection.selectedMaskId ?? "—"}</div>

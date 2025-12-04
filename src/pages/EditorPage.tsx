@@ -20,7 +20,7 @@ export function EditorPage() {
 
   if (isSupported === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-dm-bg text-xs text-slate-400">
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 text-xs text-slate-400">
         Checking viewport…
       </div>
     );
@@ -28,7 +28,7 @@ export function EditorPage() {
 
   if (!isSupported) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-dm-bg px-4 text-center text-sm text-slate-300">
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4 text-center text-sm text-slate-300">
         <div className="max-w-sm space-y-3">
           <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Desktop only</div>
           <p>
@@ -36,7 +36,7 @@ export function EditorPage() {
           </p>
           <a
             href="/dmosh/"
-            className="text-xs text-dm-accent underline underline-offset-2 hover:text-teal-300"
+            className="text-xs text-teal-300 underline underline-offset-2 hover:text-teal-200"
           >
             Back to landing page
           </a>

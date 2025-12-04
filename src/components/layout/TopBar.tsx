@@ -5,7 +5,7 @@ import { DMOSH_VERSION } from "../../version";
 export function TopBar() {
   return (
     <motion.header
-      className="flex items-center justify-between border-b border-dm-border bg-black/60 px-4 py-2 backdrop-blur"
+      className="flex items-center justify-between border-b border-slate-800 bg-black/60 px-4 py-2 backdrop-blur"
       initial={{ y: -16, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 220, damping: 24 }}
