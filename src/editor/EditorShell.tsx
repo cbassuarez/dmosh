@@ -12,6 +12,7 @@ import MaskTools from './MaskTools'
 import { ExportDialog } from './ExportDialog'
 import { usePlaybackLoop } from './usePlaybackLoop'
 import { timelineEndFrame } from './timelineUtils'
+import RenderQueuePanel from './RenderQueuePanel'
 
 const MIN_PANEL_WIDTH = 220
 
@@ -213,7 +214,12 @@ const EditorShell = ({ onOpenNewProject }: Props) => {
               className="relative shrink-0 overflow-hidden rounded-xl border border-surface-300/60 bg-surface-200/80"
               style={{ width: sizes.right }}
             >
-              <Inspector project={project} />
+              <div className="flex h-full flex-col overflow-y-auto">
+                <Inspector project={project} />
+                <div className="border-t border-surface-300/60">
+                  <RenderQueuePanel />
+                </div>
+              </div>
               <div
                 className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
                 onMouseDown={() => setDragging('right')}

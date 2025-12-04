@@ -15,6 +15,8 @@ import {
   TimelineRange,
   TimelineTrack,
 } from '../../engine/types'
+import type { RenderSettings } from '../../engine/renderTypes'
+import { exportTimeline } from '../../engine/export'
 import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerState } from '../../editor/viewerState'
 
@@ -30,6 +32,18 @@ type SelectionState = {
 }
 
 export type PlayState = 'stopped' | 'playing' | 'paused'
+
+export type RenderJobStatus = 'queued' | 'rendering' | 'completed' | 'error' | 'cancelled'
+
+export interface RenderJob {
+  id: string
+  projectId: string
+  settings: RenderSettings
+  createdAt: string
+  status: RenderJobStatus
+  progress: number
+  errorMessage?: string
+}
 
 type TransportState = {
   playState: PlayState
@@ -80,6 +94,11 @@ export type ProjectContextShape = {
   setViewerMode: (mode: ViewerMode) => void
   setViewerResolution: (resolution: ViewerResolution) => void
   setViewerOverlays: (overlays: Partial<ViewerOverlays>) => void
+  renderQueue: RenderJob[]
+  addRenderJob: (job: Omit<RenderJob, 'status' | 'progress' | 'createdAt'>) => void
+  updateRenderJob: (id: string, patch: Partial<RenderJob>) => void
+  removeRenderJob: (id: string) => void
+  startRenderJob: (id: string) => Promise<void>
   error: string | null
 }
 
@@ -210,7 +229,9 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     fps: defaultSettings.fps,
   })
   const [viewer, setViewer] = useState<ViewerState>(defaultViewerState)
+  const [renderQueue, setRenderQueue] = useState<RenderJob[]>([])
   const projectRef = useRef<Project | null>(null)
+  const renderQueueRef = useRef<RenderJob[]>([])
 
   const save = useCallback(
     (next: Project | null) => {
@@ -219,11 +240,11 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
         setProject(normalized)
         persist({ ...normalized, metadata: { ...normalized.metadata, updatedAt: new Date().toISOString() } })
       } else {
-        cleanupSourcePreviewUrls(project)
+        cleanupSourcePreviewUrls(projectRef.current)
         setProject(next)
       }
     },
-    [project, setProject],
+    [setProject],
   )
 
   useEffect(() => {
@@ -242,6 +263,10 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     projectRef.current = project
   }, [project])
+
+  useEffect(() => {
+    renderQueueRef.current = renderQueue
+  }, [renderQueue])
 
   useEffect(() => () => cleanupSourcePreviewUrls(projectRef.current), [])
 
@@ -638,6 +663,66 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     setViewer((prev) => ({ ...prev, overlays: { ...prev.overlays, ...overlays } }))
   }, [])
 
+  const addRenderJob = useCallback(
+    (job: Omit<RenderJob, 'status' | 'progress' | 'createdAt'>) => {
+      setRenderQueue((prev) => [
+        ...prev,
+        { ...job, status: 'queued', progress: 0, createdAt: new Date().toISOString() },
+      ])
+    },
+    [],
+  )
+
+  const updateRenderJob = useCallback((id: string, patch: Partial<RenderJob>) => {
+    setRenderQueue((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)))
+  }, [])
+
+  const removeRenderJob = useCallback((id: string) => {
+    setRenderQueue((prev) => prev.filter((job) => job.id !== id))
+  }, [])
+
+  const startRenderJob = useCallback(async (id: string) => {
+    const project = projectRef.current
+    if (!project) return
+    const job = renderQueueRef.current.find((entry) => entry.id === id)
+    if (!job || job.status === 'rendering') return
+
+    const controller = new AbortController()
+    setRenderQueue((prev) =>
+      prev.map((entry) =>
+        entry.id === id
+          ? { ...entry, status: 'rendering', progress: 0, errorMessage: undefined }
+          : entry,
+      ),
+    )
+
+    try {
+      await exportTimeline(project, job.settings, {
+        signal: controller.signal,
+        onProgress: (value) => {
+          setRenderQueue((prev) =>
+            prev.map((entry) =>
+              entry.id === id
+                ? { ...entry, progress: Math.min(100, Math.max(0, Math.round(value))) }
+                : entry,
+            ),
+          )
+        },
+      })
+
+      setRenderQueue((prev) =>
+        prev.map((entry) => (entry.id === id ? { ...entry, status: 'completed', progress: 100 } : entry)),
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Export failed'
+      setRenderQueue((prev) =>
+        prev.map((entry) =>
+          entry.id === id ? { ...entry, status: 'error', errorMessage: message } : entry,
+        ),
+      )
+    }
+  }, [])
+
   const value = useMemo<ProjectContextShape>(
     () => ({
       project,
@@ -677,6 +762,11 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       setViewerMode,
       setViewerResolution,
       setViewerOverlays,
+      renderQueue,
+      addRenderJob,
+      updateRenderJob,
+      removeRenderJob,
+      startRenderJob,
       error,
     }),
     [
@@ -718,6 +808,11 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       setViewerMode,
       setViewerResolution,
       setViewerOverlays,
+      renderQueue,
+      addRenderJob,
+      removeRenderJob,
+      startRenderJob,
+      updateRenderJob,
     ],
   )
 
