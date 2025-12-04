@@ -1,14 +1,52 @@
-import {
-  Engine,
-  EngineProgress,
-  EngineResult,
-  Operation,
-  Operations,
-  OPERATION_PRIORITY,
-  Project,
-  RenderSettings,
-} from './types'
-import { toEngineError, validateProject } from './validation'
+import { OPERATION_PRIORITY, Operation, Operations, Project } from './types'
+
+export type PreviewScale = 'full' | 'half' | 'quarter'
+
+export type ExportPreset = 'web-h264' | 'web-webm' | 'nle-h264' | 'nle-prores' | 'lossless-h264'
+
+export type ExportResolutionMode =
+  | { kind: 'project' }
+  | { kind: 'explicit'; width: number; height: number }
+  | { kind: 'inheritPreview'; previewScale: PreviewScale }
+
+export interface RenderSettings {
+  preset: ExportPreset
+  resolution: ExportResolutionMode
+  range: { startFrame: number; endFrame: number }
+}
+
+export type PlaybackMode = 'realTime' | 'frameAccurate'
+
+export type EnginePhase = 'idle' | 'normalizing' | 'indexing' | 'rendering' | 'encoding'
+
+export interface EngineProgress {
+  phase: EnginePhase
+  progress: number
+  message?: string
+}
+
+export type EngineWorkerErrorCode =
+  | 'NORMALIZATION_FAILED'
+  | 'INVALID_PROJECT'
+  | 'RENDER_FAILED'
+  | 'EXPORT_FAILED'
+  | 'SOURCE_MISSING'
+  | 'UNSUPPORTED_PRESET'
+
+export interface EngineWorkerError {
+  code: EngineWorkerErrorCode
+  message: string
+  details?: unknown
+  sourceId?: string
+  preset?: string
+}
+
+export interface VideoEngine {
+  loadProject(project: Project): Promise<void>
+  analyze(): Promise<void>
+  renderFrame(timelineFrame: number, previewScale: PreviewScale): Promise<ImageBitmap>
+  exportVideo(settings: RenderSettings, onProgress: (p: EngineProgress) => void): Promise<Blob>
+}
 
 const selectOperationKey = (operation: Operation): string => {
   if (operation.type === 'DropKeyframes') {
@@ -39,60 +77,4 @@ const composeOperations = (operations: Operations): Operation[] => {
   return ordered
 }
 
-const seededRandom = (seed: number): (() => number) => {
-  let state = seed % 2147483647
-  if (state <= 0) state += 2147483646
-  return () => {
-    state = (state * 16807) % 2147483647
-    return (state - 1) / 2147483646
-  }
-}
-
 export const selectEffectiveOperations = composeOperations
-
-export class PipelineEngine implements Engine {
-  private progress: EngineProgress = { phase: 'idle', progress: 0 }
-
-  getProgress(): EngineProgress {
-    return this.progress
-  }
-
-  async analyze(project: Project): Promise<void> {
-    const result = validateProject(project)
-    if (!result.valid) {
-      const error = toEngineError('INVALID_PROJECT', result.errors)
-      const err = new Error(error.message) as Error & { code?: string; details?: unknown }
-      err.code = error.code
-      err.details = error.details
-      throw err
-    }
-    const invalidSources = project.sources.filter((source) => source.normalizationError)
-    if (invalidSources.length) {
-      const error = toEngineError(
-        'NORMALIZATION_FAILED',
-        invalidSources.map((s) => `${s.id}:${s.normalizationError?.code}`),
-      )
-      const err = new Error(error.message) as Error & { code?: string; details?: unknown }
-      err.code = error.code
-      err.details = error.details
-      throw err
-    }
-    this.progress = { phase: 'analyzing', progress: 1, message: 'Validation complete' }
-  }
-
-  async render(project: Project, settings?: RenderSettings): Promise<EngineResult> {
-    await this.analyze(project)
-    this.progress = { phase: 'rendering', progress: 0.1, message: 'Applying operations' }
-    const ordered = composeOperations(project.operations)
-    const rng = seededRandom(project.seed)
-    const topologySummary = {
-      preset: settings?.preset ?? 'web',
-      appliedOperations: ordered.map((op) => op.id),
-      checksum: ordered.reduce((acc, op) => acc + op.id.length, 0) + Math.floor(rng() * 1000),
-    }
-    this.progress = { phase: 'rendering', progress: 1, message: 'Done' }
-    return { topologySummary }
-  }
-}
-
-export const createEngine = (): Engine => new PipelineEngine()

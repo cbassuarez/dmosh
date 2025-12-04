@@ -9,6 +9,7 @@ import Viewer from './Viewer'
 import Timeline from './Timeline'
 import Inspector from './Inspector'
 import MaskTools from './MaskTools'
+import { ExportDialog } from './ExportDialog'
 
 const MIN_PANEL_WIDTH = 220
 
@@ -35,6 +36,7 @@ const EditorShell = () => {
   const [dragging, setDragging] = useState<null | 'left' | 'right'>(null)
   const [open, setOpen] = useState({ left: true, right: true })
   const [sizes, setSizes] = useState({ left: 280, right: 320, center: 720 })
+  const [showExport, setShowExport] = useState(false)
 
   const { project, exportProject, importSources, newProject } = useProject()
   const { status } = useEngine()
@@ -56,8 +58,10 @@ const EditorShell = () => {
   }, [dragging])
 
   const statusLabel = useMemo(() => {
-    if (status.phase === 'analyzing') return 'Analyzing'
+    if (status.phase === 'normalizing') return 'Analyzing'
+    if (status.phase === 'indexing') return 'Indexing'
     if (status.phase === 'rendering') return 'Rendering'
+    if (status.phase === 'encoding') return 'Encoding'
     return 'Idle'
   }, [status.phase])
 
@@ -76,6 +80,12 @@ const EditorShell = () => {
             className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
           >
             <FolderDown className="h-4 w-4" /> Import clips
+          </button>
+          <button
+            onClick={() => setShowExport(true)}
+            className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
+          >
+            <Download className="h-4 w-4" /> Export…
           </button>
           <button
             onClick={exportProject}
@@ -166,6 +176,7 @@ const EditorShell = () => {
             </motion.aside>
           )}
         </AnimatePresence>
+        {project && <ExportDialog project={project} isOpen={showExport} onClose={() => setShowExport(false)} />}
       </div>
     </div>
   )
