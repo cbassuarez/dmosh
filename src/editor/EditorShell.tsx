@@ -10,6 +10,8 @@ import Timeline from './Timeline'
 import Inspector from './Inspector'
 import MaskTools from './MaskTools'
 import { ExportDialog } from './ExportDialog'
+import { usePlaybackLoop } from './usePlaybackLoop'
+import { timelineEndFrame } from './timelineUtils'
 
 const MIN_PANEL_WIDTH = 220
 
@@ -42,7 +44,7 @@ const EditorShell = ({ onOpenNewProject }: Props) => {
   const [sizes, setSizes] = useState({ left: 280, right: 320, center: 720 })
   const [showExport, setShowExport] = useState(false)
 
-  const { project, exportProject, importSources } = useProject()
+  const { project, exportProject, importSources, transport, setPlayState, setTimelineFrame } = useProject()
   const { status } = useEngine()
 
   const fileInput = useRef<HTMLInputElement>(null)
@@ -60,6 +62,45 @@ const EditorShell = ({ onOpenNewProject }: Props) => {
       window.removeEventListener('mouseup', onUp)
     }
   }, [dragging])
+
+  usePlaybackLoop()
+
+  useEffect(() => {
+    if (!project) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      const maxFrame = timelineEndFrame(project.timeline)
+
+      if (event.code === 'Space') {
+        event.preventDefault()
+        setPlayState(transport.playState === 'playing' ? 'paused' : 'playing')
+      }
+      if (event.code === 'ArrowLeft') {
+        event.preventDefault()
+        setPlayState('paused')
+        setTimelineFrame(Math.max(0, Math.floor(transport.currentTimelineFrame - 1)))
+      }
+      if (event.code === 'ArrowRight') {
+        event.preventDefault()
+        setPlayState('paused')
+        setTimelineFrame(Math.floor(transport.currentTimelineFrame + 1))
+      }
+      if (event.code === 'Home') {
+        event.preventDefault()
+        setPlayState('paused')
+        setTimelineFrame(0)
+      }
+      if (event.code === 'End') {
+        event.preventDefault()
+        setPlayState('paused')
+        setTimelineFrame(maxFrame)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [project, setPlayState, setTimelineFrame, transport.currentTimelineFrame, transport.playState])
 
   const statusLabel = useMemo(() => {
     if (status.phase === 'normalizing') return 'Analyzing'

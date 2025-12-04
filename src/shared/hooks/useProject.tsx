@@ -15,6 +15,7 @@ import {
   TimelineTrack,
 } from '../../engine/types'
 import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
+import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerState } from '../../editor/viewerState'
 
 const STORAGE_KEY = 'datamosh-current-project'
 
@@ -29,10 +30,17 @@ type SelectionState = {
 
 export type PlayState = 'stopped' | 'playing' | 'paused'
 
+type TransportState = {
+  playState: PlayState
+  currentTimelineFrame: number
+  fps: number
+}
+
 export type ProjectContextShape = {
   project: Project | null
   selection: SelectionState
-  playState: PlayState
+  transport: TransportState
+  viewer: ViewerState
   setProject: (next: Project | null) => void
   newProject: () => void
   loadProjectFromFile: (file: File) => Promise<void>
@@ -50,6 +58,7 @@ export type ProjectContextShape = {
   selectCurve: (curveId: string | null) => void
   setCurrentFrame: (frame: number) => void
   setTimeRange: (range: TimelineRange | null) => void
+  setTimelineFrame: (frame: number) => void
   createDropKeyframes: () => void
   createFreezeReference: () => void
   createRedirectFrames: (targetClipId: string) => void
@@ -64,8 +73,12 @@ export type ProjectContextShape = {
   play: () => void
   pause: () => void
   stop: () => void
+  setPlayState: (state: PlayState) => void
   stepForward: (frames?: number) => void
   stepBackward: (frames?: number) => void
+  setViewerMode: (mode: ViewerMode) => void
+  setViewerResolution: (resolution: ViewerResolution) => void
+  setViewerOverlays: (overlays: Partial<ViewerOverlays>) => void
   error: string | null
 }
 
@@ -76,6 +89,20 @@ const defaultSettings = {
   height: 1080,
   fps: 30,
   blockSize: 16,
+}
+
+const defaultViewerState: ViewerState = {
+  mode: 'original',
+  resolution: 'half',
+  overlays: {
+    safeArea: false,
+    grid: false,
+    timecode: true,
+    clipName: false,
+    masks: false,
+    motionVectors: false,
+    glitchIntensity: false,
+  },
 }
 
 let untitledCounter = 1
@@ -167,7 +194,12 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     currentFrame: 0,
     timeRange: null,
   })
-  const [playState, setPlayState] = useState<PlayState>('stopped')
+  const [transport, setTransport] = useState<TransportState>({
+    playState: 'stopped',
+    currentTimelineFrame: 0,
+    fps: defaultSettings.fps,
+  })
+  const [viewer, setViewer] = useState<ViewerState>(defaultViewerState)
 
   const save = useCallback(
     (next: Project | null) => {
@@ -196,28 +228,30 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   }, [])
 
   useEffect(() => {
-    if (playState !== 'playing' || !project) return () => {}
-    let raf: number
-    let last = performance.now()
-    const tick = (now: number) => {
-      const deltaSeconds = (now - last) / 1000
-      last = now
-      const max = timelineEndFrame(project.timeline)
-      let reachedEnd = false
-      setSelection((prev) => {
-        const nextFrame = Math.min(max, prev.currentFrame + project.timeline.fps * deltaSeconds)
-        if (nextFrame >= max) reachedEnd = true
-        return { ...prev, currentFrame: nextFrame }
-      })
-      if (reachedEnd) {
-        setPlayState('stopped')
-        return
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [playState, project])
+    if (!project) return
+    setTransport((prev) => ({ ...prev, fps: project.timeline.fps }))
+    setSelection((prev) => ({
+      ...prev,
+      currentFrame: Math.min(prev.currentFrame, timelineEndFrame(project.timeline)),
+    }))
+  }, [project])
+
+  const clampFrame = useCallback(
+    (frame: number) => {
+      const max = project ? timelineEndFrame(project.timeline) : Number.POSITIVE_INFINITY
+      return Math.max(0, Math.min(frame, max))
+    },
+    [project],
+  )
+
+  const syncFrame = useCallback(
+    (frame: number) => {
+      const next = clampFrame(frame)
+      setSelection((prev) => ({ ...prev, currentFrame: next }))
+      setTransport((prev) => ({ ...prev, currentTimelineFrame: next }))
+    },
+    [clampFrame],
+  )
 
   const newProject = useCallback(() => {
     setError(null)
@@ -448,12 +482,16 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
   const setCurrentFrame = useCallback(
     (frame: number) => {
-      setSelection((prev) => {
-        const max = project ? timelineEndFrame(project.timeline) : Number.POSITIVE_INFINITY
-        return { ...prev, currentFrame: Math.max(0, Math.min(frame, max)) }
-      })
+      syncFrame(frame)
     },
-    [project],
+    [syncFrame],
+  )
+
+  const setTimelineFrame = useCallback(
+    (frame: number) => {
+      syncFrame(frame)
+    },
+    [syncFrame],
   )
 
   const setTimeRange = useCallback((range: TimelineRange | null) => {
@@ -539,32 +577,51 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     [project, save],
   )
 
-  const play = useCallback(() => setPlayState('playing'), [])
-  const pause = useCallback(() => setPlayState('paused'), [])
+  const play = useCallback(() => setTransport((prev) => ({ ...prev, playState: 'playing' })), [])
+  const pause = useCallback(() => setTransport((prev) => ({ ...prev, playState: 'paused' })), [])
   const stop = useCallback(() => {
-    setPlayState('stopped')
-    setCurrentFrame(0)
-  }, [setCurrentFrame])
+    setTransport((prev) => ({ ...prev, playState: 'stopped' }))
+    syncFrame(0)
+  }, [syncFrame])
+
+  const setPlayState = useCallback((state: PlayState) => {
+    setTransport((prev) => ({ ...prev, playState: state }))
+  }, [])
 
   const stepForward = useCallback(
     (frames = 1) => {
-      setCurrentFrame(selection.currentFrame + frames)
+      syncFrame(selection.currentFrame + frames)
+      setTransport((prev) => ({ ...prev, playState: 'paused' }))
     },
-    [selection.currentFrame, setCurrentFrame],
+    [selection.currentFrame, syncFrame],
   )
 
   const stepBackward = useCallback(
     (frames = 1) => {
-      setCurrentFrame(selection.currentFrame - frames)
+      syncFrame(selection.currentFrame - frames)
+      setTransport((prev) => ({ ...prev, playState: 'paused' }))
     },
-    [selection.currentFrame, setCurrentFrame],
+    [selection.currentFrame, syncFrame],
   )
+
+  const setViewerMode = useCallback((mode: ViewerMode) => {
+    setViewer((prev) => ({ ...prev, mode }))
+  }, [])
+
+  const setViewerResolution = useCallback((resolution: ViewerResolution) => {
+    setViewer((prev) => ({ ...prev, resolution }))
+  }, [])
+
+  const setViewerOverlays = useCallback((overlays: Partial<ViewerOverlays>) => {
+    setViewer((prev) => ({ ...prev, overlays: { ...prev.overlays, ...overlays } }))
+  }, [])
 
   const value = useMemo<ProjectContextShape>(
     () => ({
       project,
       selection,
-      playState,
+      transport,
+      viewer,
       setProject: save,
       newProject,
       loadProjectFromFile,
@@ -581,6 +638,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       selectOperation,
       selectCurve,
       setCurrentFrame,
+      setTimelineFrame,
       setTimeRange,
       createDropKeyframes,
       createFreezeReference,
@@ -591,8 +649,12 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       play,
       pause,
       stop,
+      setPlayState,
       stepForward,
       stepBackward,
+      setViewerMode,
+      setViewerResolution,
+      setViewerOverlays,
       error,
     }),
     [
@@ -621,13 +683,19 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       selectOperation,
       selectCurve,
       selection,
+      setPlayState,
       stepBackward,
       stepForward,
       stop,
-      playState,
+      transport,
+      viewer,
       setCurrentFrame,
+      setTimelineFrame,
       setTimeRange,
       trimClip,
+      setViewerMode,
+      setViewerResolution,
+      setViewerOverlays,
     ],
   )
 
