@@ -1,19 +1,9 @@
+import type { RenderSettings } from './renderTypes'
 import { OPERATION_PRIORITY, Operation, Operations, Project } from './types'
 
+export type { RenderSettings } from './renderTypes'
+
 export type PreviewScale = 'full' | 'half' | 'quarter'
-
-export type ExportPreset = 'web-h264' | 'web-webm' | 'nle-h264' | 'nle-prores' | 'lossless-h264'
-
-export type ExportResolutionMode =
-  | { kind: 'project' }
-  | { kind: 'explicit'; width: number; height: number }
-  | { kind: 'inheritPreview'; previewScale: PreviewScale }
-
-export interface RenderSettings {
-  preset: ExportPreset
-  resolution: ExportResolutionMode
-  range: { startFrame: number; endFrame: number }
-}
 
 export type PlaybackMode = 'realTime' | 'frameAccurate'
 

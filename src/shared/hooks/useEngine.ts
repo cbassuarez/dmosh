@@ -27,7 +27,8 @@ export const useEngine = () => {
     async (project: Project, settings?: RenderSettings) => {
       if (!engine) return
       await analyze(project)
-      const frame = await engine.renderFrame(settings?.range.startFrame ?? 0, 'full')
+      const targetFrame = settings?.source.kind === 'timeline' ? settings.source.inFrame ?? 0 : 0
+      const frame = await engine.renderFrame(targetFrame, 'full')
       setResult(frame)
     },
     [analyze, engine],

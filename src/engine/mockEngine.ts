@@ -22,7 +22,13 @@ export class MockEngine implements Engine {
       progress: 1,
       message: `Rendered with ${appliedOps.length} operations`,
     }
-    return { topologySummary: { preset: settings?.preset ?? 'web', appliedOperations: appliedOps.length } }
+    return {
+      topologySummary: {
+        container: settings?.container ?? 'mp4',
+        videoCodec: settings?.videoCodec ?? 'h264',
+        appliedOperations: appliedOps.length,
+      },
+    }
   }
 }
 

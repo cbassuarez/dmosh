@@ -1,3 +1,5 @@
+import type { RenderSettings } from './renderTypes'
+
 export interface Project {
   version: string
   metadata: ProjectMetadata
@@ -227,15 +229,13 @@ export interface EngineResult {
   topologySummary: unknown
 }
 
-export interface RenderSettings {
-  preset: 'web' | 'nle'
-}
-
 export interface Engine {
   analyze(project: Project): Promise<void>
   render(project: Project, settings?: RenderSettings): Promise<EngineResult>
   getProgress(): EngineProgress
 }
+
+export type { RenderSettings }
 
 export const OPERATION_PRIORITY: (keyof Operations)[] = [
   'dropKeyframes',
