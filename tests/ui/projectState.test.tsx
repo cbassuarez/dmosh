@@ -60,6 +60,7 @@ describe('project lifecycle', () => {
             audioPresent: false,
             pixelFormat: 'unknown',
             durationFrames: 120,
+            previewUrl: 'blob://clip.mov',
           },
         ],
       }),
@@ -97,7 +98,15 @@ describe('project lifecycle', () => {
           ],
         },
         sources: [
-          { id: 'src-1', originalName: 'clip.mov', hash: 'hash', audioPresent: false, pixelFormat: 'unknown', durationFrames: 12 },
+          {
+            id: 'src-1',
+            originalName: 'clip.mov',
+            hash: 'hash',
+            audioPresent: false,
+            pixelFormat: 'unknown',
+            durationFrames: 12,
+            previewUrl: 'blob://clip.mov',
+          },
         ],
       }),
     )

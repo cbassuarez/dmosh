@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import EditorShell from '../editor/EditorShell'
 import NewProjectModal from '../editor/new-project/NewProjectModal'
 import OnboardingLanding from '../editor/OnboardingLanding'
+import { cleanupSourcePreviewUrls } from '../engine/types'
 import { useProject } from '../shared/hooks/useProject'
 
 const EditorPage = () => {
@@ -26,6 +27,7 @@ const EditorPage = () => {
   }
 
   const handleCreate = (nextProject: Parameters<typeof setProject>[0]) => {
+    cleanupSourcePreviewUrls(project)
     setProject(nextProject)
     setDismissed(false)
     setNewProjectOpen(false)

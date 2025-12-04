@@ -21,6 +21,7 @@ const baseProject: Project = {
       audioPresent: true,
       pixelFormat: 'yuv420p',
       durationFrames: 100,
+      previewUrl: 'blob://a.mp4',
       normalizedProfile: { codec: 'h264', width: 1920, height: 1080, fps: 24, hasBFrames: true, gopSize: 12 },
     },
   ],

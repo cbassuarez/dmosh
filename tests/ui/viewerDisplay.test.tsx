@@ -27,7 +27,15 @@ describe('Viewer rendering', () => {
     const project: Project = {
       ...baseProject,
       sources: [
-        { id: 'src-1', originalName: 'clip.mov', hash: 'hash', audioPresent: false, pixelFormat: 'unknown', durationFrames: 120 },
+        {
+          id: 'src-1',
+          originalName: 'clip.mov',
+          hash: 'hash',
+          audioPresent: false,
+          pixelFormat: 'unknown',
+          durationFrames: 120,
+          previewUrl: 'blob://clip.mov',
+        },
       ],
       timeline: {
         fps: 30,
@@ -49,7 +57,7 @@ describe('Viewer rendering', () => {
 
     await waitFor(() => {
       const preview = screen.getByTestId('viewer-preview')
-      expect(preview.querySelector('canvas')).toBeInTheDocument()
+      expect(preview.querySelector('video')).toBeInTheDocument()
       expect(screen.getByText(/00:00:00:00/)).toBeInTheDocument()
     })
   })

@@ -35,6 +35,8 @@ export interface Source {
   normalizedProfile?: NormalizedProfile
   durationFrames: number
   normalizationError?: NormalizationError
+  previewUrl: string
+  thumbnailUrl?: string
 }
 
 export interface NormalizedProfile {
@@ -49,6 +51,19 @@ export interface NormalizedProfile {
 export interface NormalizationError {
   code: string
   message: string
+}
+
+export const cleanupSourcePreviewUrls = (project?: Project | null) => {
+  if (!project) return
+  project.sources.forEach((source) => {
+    if (source.previewUrl?.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(source.previewUrl)
+      } catch {
+        /* noop */
+      }
+    }
+  })
 }
 
 export interface Timeline {

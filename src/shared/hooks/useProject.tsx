@@ -1,9 +1,10 @@
 /* eslint-disable react-refresh/only-export-components */
-import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AutomationCurve,
   DropKeyframesOp,
   FreezeReferenceOp,
+  cleanupSourcePreviewUrls,
   Mask,
   Operation,
   Operations,
@@ -167,6 +168,15 @@ const ensureVideoTracks = (project: Project): Project => {
   }
 }
 
+const ensureSourcePreviewUrls = (project: Project): Project => ({
+  ...project,
+  sources: project.sources.map((source) => ({
+    ...source,
+    previewUrl: source.previewUrl ?? '',
+    thumbnailUrl: source.thumbnailUrl,
+  })),
+})
+
 const shortHash = (hash: string) => `${hash.slice(0, 8)}…${hash.slice(-4)}`
 
 const computeHash = async (file: File) => {
@@ -200,18 +210,20 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     fps: defaultSettings.fps,
   })
   const [viewer, setViewer] = useState<ViewerState>(defaultViewerState)
+  const projectRef = useRef<Project | null>(null)
 
   const save = useCallback(
     (next: Project | null) => {
       if (next) {
-        const normalized = ensureVideoTracks(next)
+        const normalized = ensureSourcePreviewUrls(ensureVideoTracks(next))
         setProject(normalized)
         persist({ ...normalized, metadata: { ...normalized.metadata, updatedAt: new Date().toISOString() } })
       } else {
+        cleanupSourcePreviewUrls(project)
         setProject(next)
       }
     },
-    [setProject],
+    [project, setProject],
   )
 
   useEffect(() => {
@@ -220,12 +232,18 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       if (!stored) return
       const parsed = JSON.parse(stored)
       if (isProject(parsed)) {
-        setProject(ensureVideoTracks(parsed))
+        setProject(ensureSourcePreviewUrls(ensureVideoTracks(parsed)))
       }
     } catch (err) {
       console.error(err)
     }
   }, [])
+
+  useEffect(() => {
+    projectRef.current = project
+  }, [project])
+
+  useEffect(() => () => cleanupSourcePreviewUrls(projectRef.current), [])
 
   useEffect(() => {
     if (!project) return
@@ -255,8 +273,9 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
   const newProject = useCallback(() => {
     setError(null)
+    cleanupSourcePreviewUrls(project)
     save(createEmptyProject())
-  }, [save])
+  }, [project, save])
 
   const loadProjectFromFile = useCallback(
     async (file: File) => {
@@ -267,13 +286,14 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
           throw new Error('Invalid project schema')
         }
         setError(null)
+        cleanupSourcePreviewUrls(project)
         save(parsed)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to parse project file'
         setError(message)
       }
     },
-    [save],
+    [project, save],
   )
 
   const exportProject = useCallback(() => {
@@ -344,6 +364,8 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
           audioPresent: false,
           pixelFormat: 'unknown',
           durationFrames: projectedDuration,
+          previewUrl: URL.createObjectURL(file),
+          thumbnailUrl: undefined,
         })
       }
       if (!newSources.length) return
