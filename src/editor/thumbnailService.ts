@@ -45,26 +45,26 @@ export const getSourceThumbnail = async (source: Source): Promise<string> => {
 export const useSourceThumbnail = (source?: Source): ThumbnailResult => {
   const [state, setState] = useState<ThumbnailResult>({ url: null, isLoading: !!source, error: null })
 
-  useEffect(() => {
-    let cancelled = false
-    if (!source) {
-      setState({ url: null, isLoading: false, error: null })
-      return () => {}
-    }
-    setState((prev) => ({ ...prev, isLoading: true, error: null }))
-    getSourceThumbnail(source)
-      .then((url) => {
-        if (cancelled) return
-        setState({ url, isLoading: false, error: null })
-      })
-      .catch((err: Error) => {
-        if (cancelled) return
-        setState({ url: null, isLoading: false, error: err.message })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [source?.id])
+    useEffect(() => {
+        let cancelled = false
+        if (!source) {
+            setState({ url: null, isLoading: false, error: null })
+            return () => {}
+        }
+        setState((prev) => ({ ...prev, isLoading: true, error: null }))
+        getSourceThumbnail(source)
+        .then((url) => {
+            if (cancelled) return
+                setState({ url, isLoading: false, error: null })
+                })
+        .catch((err: Error) => {
+            if (cancelled) return
+                setState({ url: null, isLoading: false, error: err.message })
+                })
+        return () => {
+            cancelled = true
+        }
+    }, [source])
 
   return state
 }
