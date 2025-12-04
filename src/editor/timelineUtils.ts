@@ -1,4 +1,4 @@
-import { Timeline, TimelineClip, TimelineTrack } from '../engine/types'
+import { Project, Timeline, TimelineClip, TimelineTrack } from '../engine/types'
 
 export const FRAME_COLORS = {
   I: 'bg-emerald-500',
@@ -54,4 +54,38 @@ export const timelineEndFrame = (timeline: Timeline) => {
     const end = clip.timelineStartFrame + (clip.endFrame - clip.startFrame)
     return Math.max(max, end)
   }, 0)
+}
+
+export const getActiveClipAtFrame = (project: { timeline: Timeline }, frame: number): TimelineClip | null => {
+  if (!project.timeline.clips.length) return null
+  const trackOrder = new Map(project.timeline.tracks.map((track) => [track.id, track.index]))
+
+  const matches = project.timeline.clips.filter((clip) => {
+    const clipStart = clip.timelineStartFrame
+    const clipEnd = clip.timelineStartFrame + (clip.endFrame - clip.startFrame)
+    return frame >= clipStart && frame <= clipEnd
+  })
+
+  if (!matches.length) return null
+
+  return matches.reduce((top, candidate) => {
+    const currentIndex = trackOrder.get(top.trackId) ?? -Infinity
+    const candidateIndex = trackOrder.get(candidate.trackId) ?? -Infinity
+    return candidateIndex >= currentIndex ? candidate : top
+  })
+}
+
+export const deleteTrackAndClips = (project: Project, trackId: string): Project => {
+  const remainingTracks = project.timeline.tracks.filter((track) => track.id !== trackId)
+  const reindexedTracks: TimelineTrack[] = remainingTracks.map((track, index) => ({ ...track, index }))
+  const remainingClips = project.timeline.clips.filter((clip) => clip.trackId !== trackId)
+
+  return {
+    ...project,
+    timeline: {
+      ...project.timeline,
+      tracks: reindexedTracks,
+      clips: remainingClips,
+    },
+  }
 }

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Project } from '../engine/types'
 import { formatHash, useProject } from '../shared/hooks/useProject'
+import { useSourceThumbnail } from './thumbnailService'
 
 const Label = ({ children }: { children: string }) => (
   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{children}</p>
@@ -18,6 +19,7 @@ const Inspector = ({ project }: { project: Project }) => {
     useProject()
   const activeClip = project.timeline.clips.find((clip) => clip.id === selection.selectedClipId)
   const activeSource = project.sources.find((s) => s.id === activeClip?.sourceId)
+  const { url: inspectorThumb, isLoading: inspectorThumbLoading } = useSourceThumbnail(activeSource)
 
   const clipDuration = useMemo(() => (activeClip ? activeClip.endFrame - activeClip.startFrame + 1 : null), [activeClip])
 
@@ -46,6 +48,15 @@ const Inspector = ({ project }: { project: Project }) => {
         {activeSource && activeClip && (
           <div className="space-y-2 rounded-lg border border-surface-300/60 bg-surface-300/60 p-3">
             <p className="text-xs text-slate-400">Source</p>
+            <div className="overflow-hidden rounded-md bg-surface-400/30">
+              {inspectorThumb && (
+                <img src={inspectorThumb} alt={`${activeSource.originalName} preview`} className="h-28 w-full object-cover" />
+              )}
+              {!inspectorThumb && inspectorThumbLoading && <div className="h-28 w-full animate-pulse bg-surface-500/40" />}
+              {!inspectorThumb && !inspectorThumbLoading && (
+                <div className="flex h-28 items-center justify-center text-xs text-slate-500">Preview unavailable</div>
+              )}
+            </div>
             <p className="text-sm text-white">{activeSource.originalName}</p>
             <InfoRow label="Hash" value={formatHash(activeSource.hash)} />
             <InfoRow label="Duration" value={`${activeSource.durationFrames}f`} />
