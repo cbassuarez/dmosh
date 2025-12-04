@@ -6,8 +6,12 @@ import { EditorPage } from "../pages/EditorPage";
 describe("EditorPage viewport gating", () => {
   it("shows gating message on small viewport", () => {
     const originalInnerWidth = window.innerWidth;
-    // @ts-expect-error overwrite for test
-    window.innerWidth = 800;
+
+    // Override innerWidth for the duration of this test
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 800,
+    });
 
     render(
       <MemoryRouter initialEntries={["/app"]}>
@@ -19,7 +23,10 @@ describe("EditorPage viewport gating", () => {
 
     expect(screen.getByText(/Desktop only/i)).toBeInTheDocument();
 
-    // restore
-    (window as any).innerWidth = originalInnerWidth;
+    // Restore original value
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: originalInnerWidth,
+    });
   });
 });
