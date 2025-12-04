@@ -3,40 +3,36 @@ import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Project, TimelineClip } from '../engine/types'
 import { useProject } from '../shared/hooks/useProject'
+import {
+  FRAME_COLORS,
+  framesToPx,
+  generateFramePattern,
+} from './timelineUtils'
+
+export { framesToPx, generateFramePattern } from './timelineUtils'
 
 interface Props {
   project: Project
 }
 
-const FRAME_COLORS = {
-  I: 'bg-emerald-500',
-  P: 'bg-blue-500',
-  B: 'bg-slate-400',
-}
-
-export const generateFramePattern = (length: number) => {
-  const pattern: ('I' | 'P' | 'B')[] = []
-  for (let i = 0; i < length; i += 1) {
-    if (i % 30 === 0) {
-      pattern.push('I')
-    } else if (i % 3 === 0) {
-      pattern.push('P')
-    } else {
-      pattern.push('B')
-    }
-  }
-  return pattern
-}
-
-export const framesToPx = (frames: number, zoom: number) => Math.max(2, frames * zoom)
-
 const Timeline = ({ project }: Props) => {
-  const { selection, selectClip, setCurrentFrame, setTimeRange, placeClipFromSource, moveClip, trimClip, addTrack } =
-    useProject()
+  const {
+    selection,
+    selectClip,
+    setCurrentFrame,
+    setTimeRange,
+    placeClipFromSource,
+    moveClip,
+    trimClip,
+    addTrack,
+    removeTrack,
+    reorderTrack,
+  } = useProject()
   const [zoom, setZoom] = useState(2)
   const [dragClip, setDragClip] = useState<{ id: string; startX: number; original: number } | null>(null)
   const [trimState, setTrimState] = useState<{ id: string; edge: 'start' | 'end'; startX: number } | null>(null)
   const [rangeStart, setRangeStart] = useState<number | null>(null)
+  const [playheadDrag, setPlayheadDrag] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -51,11 +47,17 @@ const Timeline = ({ project }: Props) => {
         trimClip(trimState.id, trimState.edge, Math.round(deltaPx / zoom))
         setTrimState((prev) => (prev ? { ...prev, startX: event.clientX } : null))
       }
+      if (playheadDrag && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect()
+        const px = (event.clientX - rect.left) / zoom
+        setCurrentFrame(Math.max(0, Math.round(px)))
+      }
     }
     const onUp = () => {
       setDragClip(null)
       setTrimState(null)
       setRangeStart(null)
+      setPlayheadDrag(false)
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -63,7 +65,7 @@ const Timeline = ({ project }: Props) => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [dragClip, trimState, zoom, moveClip, trimClip])
+  }, [dragClip, trimState, zoom, moveClip, trimClip, playheadDrag, setCurrentFrame])
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>, trackId: string) => {
     event.preventDefault()
@@ -78,6 +80,8 @@ const Timeline = ({ project }: Props) => {
     const rect = containerRef.current?.getBoundingClientRect()
     const px = (event.clientX - (rect?.left ?? 0)) / zoom
     selectClip(null)
+    setCurrentFrame(Math.max(0, Math.round(px)))
+    setPlayheadDrag(true)
     setRangeStart(px)
     setTimeRange(null)
   }
@@ -182,11 +186,34 @@ const Timeline = ({ project }: Props) => {
         {project.timeline.tracks
           .slice()
           .sort((a, b) => a.index - b.index)
-          .map((track) => (
+          .map((track, trackIdx) => (
             <div key={track.id} className="space-y-2">
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <span className="rounded border border-surface-300/60 px-2 py-1 font-mono text-[11px] text-white">{track.name}</span>
                 <span className="text-slate-500">Video track</span>
+                <div className="ml-auto flex items-center gap-1">
+                  <button
+                    className="rounded border border-surface-300/60 px-2 py-[2px] text-white hover:border-accent disabled:opacity-40"
+                    disabled={trackIdx === 0}
+                    onClick={() => reorderTrack(track.id, project.timeline.tracks[trackIdx - 1]?.id ?? track.id)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    className="rounded border border-surface-300/60 px-2 py-[2px] text-white hover:border-accent disabled:opacity-40"
+                    disabled={trackIdx === project.timeline.tracks.length - 1}
+                    onClick={() => reorderTrack(track.id, project.timeline.tracks[trackIdx + 1]?.id ?? track.id)}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    className="rounded border border-surface-300/60 px-2 py-[2px] text-white hover:border-accent disabled:opacity-40"
+                    disabled={project.timeline.clips.some((clip) => clip.trackId === track.id)}
+                    onClick={() => removeTrack(track.id)}
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
               <div
                 className="relative h-20 overflow-hidden rounded-lg border border-surface-300/60 bg-surface-300/60"
@@ -195,6 +222,10 @@ const Timeline = ({ project }: Props) => {
                 onMouseDown={onBackgroundMouseDown}
                 onMouseUp={onBackgroundMouseUp}
               >
+                <div
+                  className="absolute top-0 bottom-0 w-[2px] bg-accent"
+                  style={{ left: framesToPx(selection.currentFrame, zoom) }}
+                />
                 {project.timeline.clips
                   .filter((clip) => clip.trackId === track.id)
                   .map((clip) => renderClip(clip))}

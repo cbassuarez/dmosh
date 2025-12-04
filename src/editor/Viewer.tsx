@@ -11,24 +11,18 @@ interface Props {
 
 const Viewer = ({ project }: Props) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { selection } = useProject()
+  const { selection, playState, play, pause, stop, stepBackward, stepForward } = useProject()
   const { engine, progress } = useVideoEngine()
-  const [currentFrame, setCurrentFrame] = useState(selection.currentFrame)
   const [previewScale, setPreviewScale] = useState<PreviewScale>('full')
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('realTime')
-  const [isPlaying, setIsPlaying] = useState(false)
   const [lastProgress, setLastProgress] = useState<EngineProgress>(progress)
 
   useEffect(() => setLastProgress(progress), [progress])
 
   useEffect(() => {
-    setCurrentFrame(selection.currentFrame)
-  }, [selection.currentFrame])
-
-  useEffect(() => {
     if (!engine || !project) return
     engine
-      .renderFrame(currentFrame, previewScale)
+      .renderFrame(selection.currentFrame, previewScale)
       .then((bitmap) => {
         const canvas = canvasRef.current
         if (!canvas) return
@@ -40,23 +34,9 @@ const Viewer = ({ project }: Props) => {
         ctx.drawImage(bitmap, 0, 0)
       })
       .catch(() => {})
-  }, [engine, project, currentFrame, previewScale])
+  }, [engine, project, selection.currentFrame, previewScale])
 
-  useEffect(() => {
-    let raf: number
-    if (!isPlaying) return () => {}
-    const tick = () => {
-      setCurrentFrame((prev) => {
-        const next = prev + 1
-        return next
-      })
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [isPlaying, playbackMode])
-
-  const seconds = currentFrame / project.settings.fps
+  const seconds = selection.currentFrame / project.settings.fps
   const timecode = new Date(seconds * 1000).toISOString().substring(14, 23)
 
   return (
@@ -73,10 +53,28 @@ const Viewer = ({ project }: Props) => {
         </div>
         <div className="flex items-center gap-2 text-[11px]">
           <button
-            onClick={() => setIsPlaying((v) => !v)}
+            onClick={() => (playState === 'playing' ? pause() : play())}
             className="rounded-md border border-surface-300/60 px-2 py-1 text-white transition hover:border-accent/70"
           >
-            {isPlaying ? 'Pause' : 'Play'}
+            {playState === 'playing' ? 'Pause' : 'Play'}
+          </button>
+          <button
+            onClick={() => stop()}
+            className="rounded-md border border-surface-300/60 px-2 py-1 text-white transition hover:border-accent/70"
+          >
+            Stop
+          </button>
+          <button
+            onClick={() => stepBackward()}
+            className="rounded-md border border-surface-300/60 px-2 py-1 text-white transition hover:border-accent/70"
+          >
+            -1f
+          </button>
+          <button
+            onClick={() => stepForward()}
+            className="rounded-md border border-surface-300/60 px-2 py-1 text-white transition hover:border-accent/70"
+          >
+            +1f
           </button>
           <select
             value={previewScale}

@@ -4,6 +4,9 @@ import {
   AutomationCurve,
   DropKeyframesOp,
   FreezeReferenceOp,
+  Mask,
+  Operation,
+  Operations,
   Project,
   RedirectFramesOp,
   Source,
@@ -11,28 +14,40 @@ import {
   TimelineRange,
   TimelineTrack,
 } from '../../engine/types'
+import { hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
 
 const STORAGE_KEY = 'datamosh-current-project'
 
 type SelectionState = {
   selectedClipId: string | null
+  selectedMaskId: string | null
+  selectedOperationId: string | null
+  selectedCurveId: string | null
   currentFrame: number
   timeRange: TimelineRange | null
 }
 
+export type PlayState = 'stopped' | 'playing' | 'paused'
+
 export type ProjectContextShape = {
   project: Project | null
   selection: SelectionState
+  playState: PlayState
   setProject: (next: Project | null) => void
   newProject: () => void
   loadProjectFromFile: (file: File) => Promise<void>
   exportProject: () => void
   importSources: (files: File[]) => Promise<void>
   addTrack: () => void
+  removeTrack: (trackId: string) => void
+  reorderTrack: (sourceId: string, targetId: string) => void
   placeClipFromSource: (sourceId: string, timelineFrame: number, trackId?: string) => void
   moveClip: (clipId: string, deltaFrames: number) => void
   trimClip: (clipId: string, edge: 'start' | 'end', delta: number) => void
   selectClip: (clipId: string | null) => void
+  selectMask: (maskId: string | null) => void
+  selectOperation: (operationId: string | null) => void
+  selectCurve: (curveId: string | null) => void
   setCurrentFrame: (frame: number) => void
   setTimeRange: (range: TimelineRange | null) => void
   createDropKeyframes: () => void
@@ -44,6 +59,13 @@ export type ProjectContextShape = {
     start: number,
     end: number,
   ) => void
+  addMask: (mask: Mask) => void
+  addOperation: (type: keyof Operations, op: Operation) => void
+  play: () => void
+  pause: () => void
+  stop: () => void
+  stepForward: (frames?: number) => void
+  stepBackward: (frames?: number) => void
   error: string | null
 }
 
@@ -73,7 +95,14 @@ const createEmptyProject = (): Project => ({
     fps: defaultSettings.fps,
     width: defaultSettings.width,
     height: defaultSettings.height,
-    tracks: [],
+    tracks: [
+      {
+        id: 'track-1',
+        kind: 'video',
+        name: 'Video 1',
+        index: 0,
+      },
+    ],
     clips: [],
   },
   masks: [],
@@ -99,6 +128,18 @@ const isProject = (value: unknown): value is Project => {
   )
 }
 
+const ensureVideoTracks = (project: Project): Project => {
+  if (project.timeline.tracks.length > 0) return project
+  const track: TimelineTrack = { id: 'track-1', kind: 'video', index: 0, name: 'Video 1' }
+  return {
+    ...project,
+    timeline: {
+      ...project.timeline,
+      tracks: [track],
+    },
+  }
+}
+
 const shortHash = (hash: string) => `${hash.slice(0, 8)}…${hash.slice(-4)}`
 
 const computeHash = async (file: File) => {
@@ -120,14 +161,23 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const [error, setError] = useState<string | null>(null)
   const [selection, setSelection] = useState<SelectionState>({
     selectedClipId: null,
+    selectedMaskId: null,
+    selectedOperationId: null,
+    selectedCurveId: null,
     currentFrame: 0,
     timeRange: null,
   })
+  const [playState, setPlayState] = useState<PlayState>('stopped')
 
   const save = useCallback(
     (next: Project | null) => {
-      setProject(next)
-      if (next) persist({ ...next, metadata: { ...next.metadata, updatedAt: new Date().toISOString() } })
+      if (next) {
+        const normalized = ensureVideoTracks(next)
+        setProject(normalized)
+        persist({ ...normalized, metadata: { ...normalized.metadata, updatedAt: new Date().toISOString() } })
+      } else {
+        setProject(next)
+      }
     },
     [setProject],
   )
@@ -138,12 +188,36 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       if (!stored) return
       const parsed = JSON.parse(stored)
       if (isProject(parsed)) {
-        setProject(parsed)
+        setProject(ensureVideoTracks(parsed))
       }
     } catch (err) {
       console.error(err)
     }
   }, [])
+
+  useEffect(() => {
+    if (playState !== 'playing' || !project) return () => {}
+    let raf: number
+    let last = performance.now()
+    const tick = (now: number) => {
+      const deltaSeconds = (now - last) / 1000
+      last = now
+      const max = timelineEndFrame(project.timeline)
+      let reachedEnd = false
+      setSelection((prev) => {
+        const nextFrame = Math.min(max, prev.currentFrame + project.timeline.fps * deltaSeconds)
+        if (nextFrame >= max) reachedEnd = true
+        return { ...prev, currentFrame: nextFrame }
+      })
+      if (reachedEnd) {
+        setPlayState('stopped')
+        return
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [playState, project])
 
   const newProject = useCallback(() => {
     setError(null)
@@ -194,6 +268,30 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     })
   }, [project, save])
 
+  const removeTrack = useCallback(
+    (trackId: string) => {
+      if (!project) return
+      const hasClips = project.timeline.clips.some((clip) => clip.trackId === trackId)
+      if (hasClips) return
+      const remaining = project.timeline.tracks.filter((track) => track.id !== trackId)
+      const reindexed = remaining.map((track, idx) => ({ ...track, index: idx }))
+      save({
+        ...project,
+        timeline: { ...project.timeline, tracks: reindexed },
+      })
+    },
+    [project, save],
+  )
+
+  const reorderTrack = useCallback(
+    (sourceId: string, targetId: string) => {
+      if (!project) return
+      const reordered = reorderTracks(project.timeline.tracks, sourceId, targetId)
+      save({ ...project, timeline: { ...project.timeline, tracks: reordered } })
+    },
+    [project, save],
+  )
+
   const importSources = useCallback(
     async (files: File[]) => {
       if (!project) return
@@ -241,6 +339,15 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
         endFrame: source.durationFrames - 1,
         timelineStartFrame: Math.max(0, Math.round(timelineFrame)),
       }
+      const overlaps = hasOverlapOnTrack(project.timeline.clips, targetTrack.id, {
+        startFrame: clip.startFrame,
+        endFrame: clip.endFrame,
+        timelineStartFrame: clip.timelineStartFrame,
+      })
+      if (overlaps) {
+        setError('Clips cannot overlap on the same track')
+        return
+      }
       save({
         ...project,
         timeline: { ...project.timeline, tracks, clips: [...project.timeline.clips, clip] },
@@ -252,15 +359,21 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const moveClip = useCallback(
     (clipId: string, deltaFrames: number) => {
       if (!project) return
+      const nextClips = project.timeline.clips.map((clip) =>
+        clip.id === clipId
+          ? { ...clip, timelineStartFrame: Math.max(0, Math.round(clip.timelineStartFrame + deltaFrames)) }
+          : clip,
+      )
+      const moved = nextClips.find((clip) => clip.id === clipId)
+      if (moved && hasOverlapOnTrack(nextClips.filter((c) => c.id !== clipId), moved.trackId, moved)) {
+        setError('Clips cannot overlap on the same track')
+        return
+      }
       save({
         ...project,
         timeline: {
           ...project.timeline,
-          clips: project.timeline.clips.map((clip) =>
-            clip.id === clipId
-              ? { ...clip, timelineStartFrame: Math.max(0, Math.round(clip.timelineStartFrame + deltaFrames)) }
-              : clip,
-          ),
+          clips: nextClips,
         },
       })
     },
@@ -270,19 +383,25 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const trimClip = useCallback(
     (clipId: string, edge: 'start' | 'end', delta: number) => {
       if (!project) return
+      const nextClips = project.timeline.clips.map((clip) => {
+        if (clip.id !== clipId) return clip
+        if (edge === 'start') {
+          const nextStart = Math.min(clip.endFrame, Math.max(0, Math.round(clip.startFrame + delta)))
+          return { ...clip, startFrame: nextStart }
+        }
+        const nextEnd = Math.max(clip.startFrame, Math.round(clip.endFrame + delta))
+        return { ...clip, endFrame: nextEnd }
+      })
+      const trimmed = nextClips.find((clip) => clip.id === clipId)
+      if (trimmed && hasOverlapOnTrack(nextClips.filter((c) => c.id !== clipId), trimmed.trackId, trimmed)) {
+        setError('Clips cannot overlap on the same track')
+        return
+      }
       save({
         ...project,
         timeline: {
           ...project.timeline,
-          clips: project.timeline.clips.map((clip) => {
-            if (clip.id !== clipId) return clip
-            if (edge === 'start') {
-              const nextStart = Math.min(clip.endFrame, Math.max(0, Math.round(clip.startFrame + delta)))
-              return { ...clip, startFrame: nextStart }
-            }
-            const nextEnd = Math.max(clip.startFrame, Math.round(clip.endFrame + delta))
-            return { ...clip, endFrame: nextEnd }
-          }),
+          clips: nextClips,
         },
       })
     },
@@ -290,12 +409,54 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   )
 
   const selectClip = useCallback((clipId: string | null) => {
-    setSelection((prev) => ({ ...prev, selectedClipId: clipId }))
+    setSelection((prev) => ({
+      ...prev,
+      selectedClipId: clipId,
+      selectedMaskId: null,
+      selectedOperationId: null,
+      selectedCurveId: null,
+    }))
   }, [])
 
-  const setCurrentFrame = useCallback((frame: number) => {
-    setSelection((prev) => ({ ...prev, currentFrame: frame }))
+  const selectMask = useCallback((maskId: string | null) => {
+    setSelection((prev) => ({
+      ...prev,
+      selectedMaskId: maskId,
+      selectedClipId: null,
+      selectedOperationId: null,
+      selectedCurveId: null,
+    }))
   }, [])
+
+  const selectOperation = useCallback((operationId: string | null) => {
+    setSelection((prev) => ({
+      ...prev,
+      selectedOperationId: operationId,
+      selectedClipId: null,
+      selectedMaskId: null,
+      selectedCurveId: null,
+    }))
+  }, [])
+
+  const selectCurve = useCallback((curveId: string | null) => {
+    setSelection((prev) => ({
+      ...prev,
+      selectedCurveId: curveId,
+      selectedClipId: null,
+      selectedMaskId: null,
+      selectedOperationId: null,
+    }))
+  }, [])
+
+  const setCurrentFrame = useCallback(
+    (frame: number) => {
+      setSelection((prev) => {
+        const max = project ? timelineEndFrame(project.timeline) : Number.POSITIVE_INFINITY
+        return { ...prev, currentFrame: Math.max(0, Math.min(frame, max)) }
+      })
+    },
+    [project],
+  )
 
   const setTimeRange = useCallback((range: TimelineRange | null) => {
     setSelection((prev) => ({ ...prev, timeRange: range }))
@@ -364,31 +525,85 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     [project, save],
   )
 
+  const addMask = useCallback(
+    (mask: Mask) => {
+      if (!project) return
+      save({ ...project, masks: [...project.masks, mask] })
+    },
+    [project, save],
+  )
+
+  const addOperation = useCallback(
+    (type: keyof Operations, op: Operation) => {
+      if (!project) return
+      save({ ...project, operations: { ...project.operations, [type]: [...project.operations[type], op] } })
+    },
+    [project, save],
+  )
+
+  const play = useCallback(() => setPlayState('playing'), [])
+  const pause = useCallback(() => setPlayState('paused'), [])
+  const stop = useCallback(() => {
+    setPlayState('stopped')
+    setCurrentFrame(0)
+  }, [setCurrentFrame])
+
+  const stepForward = useCallback(
+    (frames = 1) => {
+      setCurrentFrame(selection.currentFrame + frames)
+    },
+    [selection.currentFrame, setCurrentFrame],
+  )
+
+  const stepBackward = useCallback(
+    (frames = 1) => {
+      setCurrentFrame(selection.currentFrame - frames)
+    },
+    [selection.currentFrame, setCurrentFrame],
+  )
+
   const value = useMemo<ProjectContextShape>(
     () => ({
       project,
       selection,
+      playState,
       setProject: save,
       newProject,
       loadProjectFromFile,
       exportProject,
       importSources,
       addTrack,
+      removeTrack,
+      reorderTrack,
       placeClipFromSource,
       moveClip,
       trimClip,
       selectClip,
+      selectMask,
+      selectOperation,
+      selectCurve,
       setCurrentFrame,
       setTimeRange,
       createDropKeyframes,
       createFreezeReference,
       createRedirectFrames,
       addAutomationCurve,
+      addMask,
+      addOperation,
+      play,
+      pause,
+      stop,
+      stepForward,
+      stepBackward,
       error,
     }),
     [
       addAutomationCurve,
+      addMask,
+      addOperation,
       addTrack,
+      removeTrack,
+      reorderTrack,
       createDropKeyframes,
       createFreezeReference,
       createRedirectFrames,
@@ -399,10 +614,19 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       moveClip,
       newProject,
       placeClipFromSource,
+      play,
+      pause,
       project,
       save,
       selectClip,
+      selectMask,
+      selectOperation,
+      selectCurve,
       selection,
+      stepBackward,
+      stepForward,
+      stop,
+      playState,
       setCurrentFrame,
       setTimeRange,
       trimClip,
