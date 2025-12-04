@@ -1,7 +1,6 @@
 // src/components/layout/AppShell.tsx
 import { ReactNode } from "react";
 import { TopBar } from "./TopBar";
-import { Sidebar } from "./Sidebar";
 
 interface AppShellProps {
   sidebar: ReactNode;

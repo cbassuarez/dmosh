@@ -1,5 +1,3 @@
-cd dmosh
-cat > tailwind.config.cjs << 'EOF'
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
@@ -15,5 +13,3 @@ module.exports = {
   },
   plugins: [],
 };
-EOF
-
