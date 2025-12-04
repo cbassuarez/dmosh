@@ -25,26 +25,26 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
-          
+
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Lint
         run: npm run lint --if-present
 
       - name: Test
-        run: ROLLUP_DISABLE_NATIVE=1 npm run test:ci
+        run: npm run test:ci
 
       - name: Expose version as env
         run: node -p "'VITE_DMOSH_VERSION=' + require('./package.json').version" >> $GITHUB_ENV
 
       - name: Build app
-        run: ROLLUP_DISABLE_NATIVE=1 npm run build:spa
+        run: npm run build:spa
 
       - name: Build docs
-        run: ROLLUP_DISABLE_NATIVE=1 npm run docs:build
+        run: npm run docs:build
 
       - name: Copy docs into dist
         run: |
