@@ -16,7 +16,7 @@ jobs:
           cache: 'npm'
       - run: npm install
       - run: npm run lint
-      - run: npm run test -- --runInBand
+      - run: npm run test 
       - run: npm run build
 
   deploy:
