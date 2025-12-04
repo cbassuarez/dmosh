@@ -1,4 +1,4 @@
-# DMOSH
+# DMOSH 
 
 A serious, darkroom-inspired datamoshing editor shell built with React, TypeScript, Vite, Tailwind, Framer Motion, and Lucide. Engine hooks are stubbed for now; the focus is on layout, motion, and interaction scaffolding.
 
