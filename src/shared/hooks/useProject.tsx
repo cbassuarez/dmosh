@@ -18,7 +18,8 @@ import {
 import type { RenderSettings } from '../../engine/renderTypes'
 import { exportTimeline } from '../../engine/export'
 import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
-import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerState } from '../../editor/viewerState'
+import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerRuntimeSettings, ViewerState } from '../../editor/viewerState'
+import { MobileMode } from '../../editor/mobileTypes'
 
 const STORAGE_KEY = 'datamosh-current-project'
 
@@ -56,6 +57,7 @@ export type ProjectContextShape = {
   selection: SelectionState
   transport: TransportState
   viewer: ViewerState
+  viewerRuntimeSettings: ViewerRuntimeSettings
   setProject: (next: Project | null) => void
   newProject: () => void
   loadProjectFromFile: (file: File) => Promise<void>
@@ -100,6 +102,11 @@ export type ProjectContextShape = {
   removeRenderJob: (id: string) => void
   startRenderJob: (id: string) => Promise<void>
   error: string | null
+  mobileMode: MobileMode
+  setMobileMode: (mode: MobileMode) => void
+  activeMobileTrackId: string | null
+  setActiveMobileTrackId: (id: string | null) => void
+  setViewerRuntimeSettings: (settings: Partial<ViewerRuntimeSettings>) => void
 }
 
 const ProjectContext = createContext<ProjectContextShape | null>(null)
@@ -229,7 +236,10 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     fps: defaultSettings.fps,
   })
   const [viewer, setViewer] = useState<ViewerState>(defaultViewerState)
+  const [viewerRuntimeSettings, setViewerRuntimeSettingsState] = useState<ViewerRuntimeSettings>({})
   const [renderQueue, setRenderQueue] = useState<RenderJob[]>([])
+  const [mobileMode, setMobileMode] = useState<MobileMode>('edit')
+  const [activeMobileTrackId, setActiveMobileTrackId] = useState<string | null>(null)
   const projectRef = useRef<Project | null>(null)
   const renderQueueRef = useRef<RenderJob[]>([])
 
@@ -262,6 +272,14 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
   useEffect(() => {
     projectRef.current = project
+  }, [project])
+
+  useEffect(() => {
+    if (!project) return
+    setActiveMobileTrackId((prev) => {
+      if (prev && project.timeline.tracks.some((track) => track.id === prev)) return prev
+      return project.timeline.tracks[0]?.id ?? null
+    })
   }, [project])
 
   useEffect(() => {
@@ -663,6 +681,18 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     setViewer((prev) => ({ ...prev, overlays: { ...prev.overlays, ...overlays } }))
   }, [])
 
+  const setViewerRuntimeSettings = useCallback((settings: Partial<ViewerRuntimeSettings>) => {
+    setViewerRuntimeSettingsState((prev) => ({ ...prev, ...settings }))
+  }, [])
+
+  const updateMobileMode = useCallback((mode: MobileMode) => {
+    setMobileMode(mode)
+  }, [])
+
+  const updateActiveMobileTrackId = useCallback((id: string | null) => {
+    setActiveMobileTrackId(id)
+  }, [])
+
   const addRenderJob = useCallback(
     (job: Omit<RenderJob, 'status' | 'progress' | 'createdAt'>) => {
       setRenderQueue((prev) => [
@@ -729,6 +759,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       selection,
       transport,
       viewer,
+      viewerRuntimeSettings,
       setProject: save,
       newProject,
       loadProjectFromFile,
@@ -762,12 +793,17 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       setViewerMode,
       setViewerResolution,
       setViewerOverlays,
+      setViewerRuntimeSettings,
       renderQueue,
       addRenderJob,
       updateRenderJob,
       removeRenderJob,
       startRenderJob,
       error,
+      mobileMode,
+      setMobileMode: updateMobileMode,
+      activeMobileTrackId,
+      setActiveMobileTrackId: updateActiveMobileTrackId,
     }),
     [
       addAutomationCurve,
@@ -808,11 +844,17 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       setViewerMode,
       setViewerResolution,
       setViewerOverlays,
+      setViewerRuntimeSettings,
       renderQueue,
       addRenderJob,
       removeRenderJob,
       startRenderJob,
       updateRenderJob,
+      viewerRuntimeSettings,
+      mobileMode,
+      updateMobileMode,
+      activeMobileTrackId,
+      updateActiveMobileTrackId,
     ],
   )
 

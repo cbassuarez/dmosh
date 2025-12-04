@@ -59,6 +59,7 @@ interface VideoViewportProps {
   frame: number
   resolution: ViewerResolution
   overlays: ViewerOverlays
+  previewMaxHeight?: number
 }
 
 const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -118,7 +119,7 @@ const drawGlitchIntensity = (ctx: CanvasRenderingContext2D, width: number, heigh
   ctx.fillRect(0, 0, width, height)
 }
 
-const VideoViewport = ({ kind, project, frame, resolution, overlays }: VideoViewportProps) => {
+const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxHeight }: VideoViewportProps) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
@@ -147,7 +148,9 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays }: VideoView
     if (!canvas || !container) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const scale = resolution === 'full' ? 1 : resolution === 'half' ? 0.5 : 0.25
+    const resolutionScale = resolution === 'full' ? 1 : resolution === 'half' ? 0.5 : 0.25
+    const previewScale = previewMaxHeight ? Math.min(1, previewMaxHeight / project.settings.height) : 1
+    const scale = resolutionScale * previewScale
     const width = Math.max(container.clientWidth, Math.round(project.settings.width * scale))
     const height = Math.max(container.clientHeight, Math.round(project.settings.height * scale))
     canvas.width = width
@@ -173,7 +176,23 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays }: VideoView
       ctx.font = '13px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
       ctx.fillText(source.originalName, 20, 30)
     }
-  }, [clip, frame, overlays.clipName, overlays.glitchIntensity, overlays.grid, overlays.masks, overlays.motionVectors, overlays.safeArea, overlays.timecode, project.settings.height, project.settings.width, project.timeline.fps, resolution, source])
+  }, [
+    clip,
+    frame,
+    overlays.clipName,
+    overlays.glitchIntensity,
+    overlays.grid,
+    overlays.masks,
+    overlays.motionVectors,
+    overlays.safeArea,
+    overlays.timecode,
+    previewMaxHeight,
+    project.settings.height,
+    project.settings.width,
+    project.timeline.fps,
+    resolution,
+    source,
+  ])
 
   if (!clip || !source?.previewUrl) {
     return (
@@ -198,10 +217,36 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays }: VideoView
   )
 }
 
-const CompareView = ({ project, frame, resolution, overlays }: { project: Project; frame: number; resolution: ViewerResolution; overlays: ViewerOverlays }) => (
+const CompareView = ({
+  project,
+  frame,
+  resolution,
+  overlays,
+  previewMaxHeight,
+}: {
+  project: Project
+  frame: number
+  resolution: ViewerResolution
+  overlays: ViewerOverlays
+  previewMaxHeight?: number
+}) => (
   <div className="grid h-full grid-cols-2 gap-[1px] bg-surface-900">
-    <VideoViewport kind="original" project={project} frame={frame} resolution={resolution} overlays={overlays} />
-    <VideoViewport kind="moshed" project={project} frame={frame} resolution={resolution} overlays={overlays} />
+    <VideoViewport
+      kind="original"
+      project={project}
+      frame={frame}
+      resolution={resolution}
+      overlays={overlays}
+      previewMaxHeight={previewMaxHeight}
+    />
+    <VideoViewport
+      kind="moshed"
+      project={project}
+      frame={frame}
+      resolution={resolution}
+      overlays={overlays}
+      previewMaxHeight={previewMaxHeight}
+    />
   </div>
 )
 
@@ -233,6 +278,7 @@ const Viewer = ({ project }: Props) => {
   const {
     transport,
     viewer,
+    viewerRuntimeSettings,
     setViewerMode,
     setViewerResolution,
     setViewerOverlays,
@@ -347,6 +393,7 @@ const Viewer = ({ project }: Props) => {
               frame={currentTimelineFrame}
               resolution={viewer.resolution}
               overlays={viewer.overlays}
+              previewMaxHeight={viewerRuntimeSettings.previewMaxHeight}
             />
           )}
           {viewer.mode === 'original' && (
@@ -356,6 +403,7 @@ const Viewer = ({ project }: Props) => {
               frame={currentTimelineFrame}
               resolution={viewer.resolution}
               overlays={viewer.overlays}
+              previewMaxHeight={viewerRuntimeSettings.previewMaxHeight}
             />
           )}
           {viewer.mode === 'moshed' && (
@@ -365,6 +413,7 @@ const Viewer = ({ project }: Props) => {
               frame={currentTimelineFrame}
               resolution={viewer.resolution}
               overlays={viewer.overlays}
+              previewMaxHeight={viewerRuntimeSettings.previewMaxHeight}
             />
           )}
           {!activeClip && (
