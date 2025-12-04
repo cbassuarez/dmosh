@@ -19,7 +19,7 @@ describe("EditorPage viewport gating", () => {
 
     expect(screen.getByText(/Desktop only/i)).toBeInTheDocument();
 
-    // @ts-expect-error reset after test
-    window.innerWidth = originalInnerWidth;
+    // restore
+    (window as any).innerWidth = originalInnerWidth;
   });
 });
