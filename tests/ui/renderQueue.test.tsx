@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { useEffect } from 'react'
@@ -6,6 +6,18 @@ import RenderQueuePanel from '../../src/editor/RenderQueuePanel'
 import type { RenderSettings } from '../../src/engine/renderTypes'
 import type { Project } from '../../src/engine/types'
 import { ProjectProvider, useProject } from '../../src/shared/hooks/useProject'
+
+const downloadJobResultMock = vi.fn()
+
+vi.mock('../../src/editor/downloadHelpers', async () => {
+  const actual = await vi.importActual<typeof import('../../src/editor/downloadHelpers')>(
+    '../../src/editor/downloadHelpers',
+  )
+  return {
+    ...actual,
+    downloadJobResult: (...args: unknown[]) => downloadJobResultMock(...args),
+  }
+})
 
 const project: Project = {
   version: '0.1',
@@ -73,5 +85,9 @@ describe('RenderQueuePanel', () => {
     await waitFor(() => {
       expect(screen.getByText(/completed/i)).toBeInTheDocument()
     })
+
+    const downloadButton = await screen.findByText('Download')
+    fireEvent.click(downloadButton)
+    expect(downloadJobResultMock).toHaveBeenCalled()
   })
 })

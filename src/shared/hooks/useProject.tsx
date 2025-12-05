@@ -20,8 +20,10 @@ import { exportTimeline } from '../../engine/export'
 import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerRuntimeSettings, ViewerState } from '../../editor/viewerState'
 import { MobileMode } from '../../editor/mobileTypes'
+import { canDownloadJob, downloadJobResult } from '../../editor/downloadHelpers'
 
 const STORAGE_KEY = 'datamosh-current-project'
+const EXPORT_PREFS_STORAGE_KEY = 'dmosh_export_prefs'
 
 type SelectionState = {
   selectedClipId: string | null
@@ -36,6 +38,13 @@ export type PlayState = 'stopped' | 'playing' | 'paused'
 
 export type RenderJobStatus = 'queued' | 'rendering' | 'completed' | 'error' | 'cancelled'
 
+export interface RenderJobResult {
+  mimeType: string
+  fileName: string
+  size: number
+  blob?: Blob
+}
+
 export interface RenderJob {
   id: string
   projectId: string
@@ -44,6 +53,7 @@ export interface RenderJob {
   status: RenderJobStatus
   progress: number
   errorMessage?: string
+  result?: RenderJobResult
 }
 
 type TransportState = {
@@ -96,6 +106,8 @@ export type ProjectContextShape = {
   setViewerMode: (mode: ViewerMode) => void
   setViewerResolution: (resolution: ViewerResolution) => void
   setViewerOverlays: (overlays: Partial<ViewerOverlays>) => void
+  exportPreferences: ExportPreferences
+  setExportPreferences: (patch: Partial<ExportPreferences>) => void
   renderQueue: RenderJob[]
   addRenderJob: (job: Omit<RenderJob, 'status' | 'progress' | 'createdAt'>) => void
   updateRenderJob: (id: string, patch: Partial<RenderJob>) => void
@@ -110,6 +122,10 @@ export type ProjectContextShape = {
 }
 
 const ProjectContext = createContext<ProjectContextShape | null>(null)
+
+export type ExportPreferences = {
+  autoDownloadOnComplete: boolean
+}
 
 const defaultSettings = {
   width: 1920,
@@ -130,6 +146,20 @@ const defaultViewerState: ViewerState = {
     motionVectors: false,
     glitchIntensity: false,
   },
+}
+
+export const loadExportPreferences = (): ExportPreferences => {
+  if (typeof window === 'undefined') {
+    return { autoDownloadOnComplete: false }
+  }
+  try {
+    const raw = window.localStorage.getItem(EXPORT_PREFS_STORAGE_KEY)
+    if (!raw) return { autoDownloadOnComplete: false }
+    const parsed = JSON.parse(raw)
+    return { autoDownloadOnComplete: !!parsed.autoDownloadOnComplete }
+  } catch {
+    return { autoDownloadOnComplete: false }
+  }
 }
 
 let untitledCounter = 1
@@ -237,11 +267,16 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   })
   const [viewer, setViewer] = useState<ViewerState>(defaultViewerState)
   const [viewerRuntimeSettings, setViewerRuntimeSettingsState] = useState<ViewerRuntimeSettings>({})
+  const [exportPreferences, setExportPreferencesState] = useState<ExportPreferences>(() =>
+    loadExportPreferences(),
+  )
   const [renderQueue, setRenderQueue] = useState<RenderJob[]>([])
   const [mobileMode, setMobileMode] = useState<MobileMode>('edit')
   const [activeMobileTrackId, setActiveMobileTrackId] = useState<string | null>(null)
   const projectRef = useRef<Project | null>(null)
   const renderQueueRef = useRef<RenderJob[]>([])
+  const isMountedRef = useRef(true)
+  const renderControllersRef = useRef<Map<string, AbortController>>(new Map())
 
   const save = useCallback(
     (next: Project | null) => {
@@ -286,7 +321,12 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     renderQueueRef.current = renderQueue
   }, [renderQueue])
 
-  useEffect(() => () => cleanupSourcePreviewUrls(projectRef.current), [])
+  useEffect(() => () => {
+    isMountedRef.current = false
+    renderControllersRef.current.forEach((controller) => controller.abort())
+    renderControllersRef.current.clear()
+    cleanupSourcePreviewUrls(projectRef.current)
+  }, [])
 
   useEffect(() => {
     if (!project) return
@@ -685,6 +725,32 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     setViewerRuntimeSettingsState((prev) => ({ ...prev, ...settings }))
   }, [])
 
+  const setExportPreferences = useCallback((patch: Partial<ExportPreferences>) => {
+    setExportPreferencesState((prev) => {
+      const next = { ...prev, ...patch }
+
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(EXPORT_PREFS_STORAGE_KEY, JSON.stringify(next))
+        } catch {
+          // ignore storage errors
+        }
+      }
+
+      return next
+    })
+  }, [])
+
+  const updateRenderQueueState = useCallback((updater: (prev: RenderJob[]) => RenderJob[]) => {
+    if (!isMountedRef.current) return
+    setRenderQueue((prev) => {
+      if (!isMountedRef.current) return prev
+      const next = updater(prev)
+      renderQueueRef.current = next
+      return next
+    })
+  }, [])
+
   const updateMobileMode = useCallback((mode: MobileMode) => {
     setMobileMode(mode)
   }, [])
@@ -695,21 +761,24 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
   const addRenderJob = useCallback(
     (job: Omit<RenderJob, 'status' | 'progress' | 'createdAt'>) => {
-      setRenderQueue((prev) => [
+      updateRenderQueueState((prev) => [
         ...prev,
-        { ...job, status: 'queued', progress: 0, createdAt: new Date().toISOString() },
+        { ...job, status: 'queued', progress: 0, createdAt: new Date().toISOString(), result: undefined },
       ])
     },
-    [],
+    [updateRenderQueueState],
   )
 
   const updateRenderJob = useCallback((id: string, patch: Partial<RenderJob>) => {
-    setRenderQueue((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)))
-  }, [])
+    updateRenderQueueState((prev) => prev.map((job) => (job.id === id ? { ...job, ...patch } : job)))
+  }, [updateRenderQueueState])
 
   const removeRenderJob = useCallback((id: string) => {
-    setRenderQueue((prev) => prev.filter((job) => job.id !== id))
-  }, [])
+    const controller = renderControllersRef.current.get(id)
+    controller?.abort()
+    renderControllersRef.current.delete(id)
+    updateRenderQueueState((prev) => prev.filter((job) => job.id !== id))
+  }, [updateRenderQueueState])
 
   const startRenderJob = useCallback(async (id: string) => {
     const project = projectRef.current
@@ -718,19 +787,20 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     if (!job || job.status === 'rendering') return
 
     const controller = new AbortController()
-    setRenderQueue((prev) =>
+    renderControllersRef.current.set(id, controller)
+    updateRenderQueueState((prev) =>
       prev.map((entry) =>
         entry.id === id
-          ? { ...entry, status: 'rendering', progress: 0, errorMessage: undefined }
+          ? { ...entry, status: 'rendering', progress: 0, errorMessage: undefined, result: undefined }
           : entry,
       ),
     )
 
     try {
-      await exportTimeline(project, job.settings, {
+      const result = await exportTimeline(project, job.settings, {
         signal: controller.signal,
         onProgress: (value) => {
-          setRenderQueue((prev) =>
+          updateRenderQueueState((prev) =>
             prev.map((entry) =>
               entry.id === id
                 ? { ...entry, progress: Math.min(100, Math.max(0, Math.round(value))) }
@@ -740,18 +810,43 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
         },
       })
 
-      setRenderQueue((prev) =>
-        prev.map((entry) => (entry.id === id ? { ...entry, status: 'completed', progress: 100 } : entry)),
+      updateRenderQueueState((prev) =>
+        prev.map((entry) =>
+          entry.id === id
+            ? {
+                ...entry,
+                status: 'completed',
+                progress: 100,
+                result: {
+                  mimeType: result.mimeType,
+                  fileName: result.fileName,
+                  size: result.blob.size,
+                  blob: result.blob,
+                },
+              }
+            : entry,
+        ),
       )
+
+      if (exportPreferences.autoDownloadOnComplete) {
+        setTimeout(() => {
+          const latestJob = renderQueueRef.current.find((entry) => entry.id === id)
+          if (latestJob && canDownloadJob(latestJob)) {
+            downloadJobResult(latestJob)
+          }
+        }, 0)
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Export failed'
-      setRenderQueue((prev) =>
+      updateRenderQueueState((prev) =>
         prev.map((entry) =>
           entry.id === id ? { ...entry, status: 'error', errorMessage: message } : entry,
         ),
       )
+    } finally {
+      renderControllersRef.current.delete(id)
     }
-  }, [])
+  }, [exportPreferences.autoDownloadOnComplete, updateRenderQueueState])
 
   const value = useMemo<ProjectContextShape>(
     () => ({
@@ -795,6 +890,8 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       setViewerOverlays,
       setViewerRuntimeSettings,
       renderQueue,
+      exportPreferences,
+      setExportPreferences,
       addRenderJob,
       updateRenderJob,
       removeRenderJob,
@@ -845,6 +942,8 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       setViewerResolution,
       setViewerOverlays,
       setViewerRuntimeSettings,
+      exportPreferences,
+      setExportPreferences,
       renderQueue,
       addRenderJob,
       removeRenderJob,
