@@ -35,11 +35,21 @@ const MIN_FALLBACK_DURATION_SECONDS = 1
 
 async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegInstance) return ffmpegInstance
-  const ffmpeg = createFFmpeg({ log: false })
+
+  const ffmpeg = createFFmpeg({
+    log: true,
+    // Let Vite bundle the core correctly and use a stable URL in both dev and GH Pages
+    corePath: new URL(
+      '@ffmpeg/core/dist/ffmpeg-core.js',
+      import.meta.url,
+    ).toString(),
+  })
+
   await ffmpeg.load()
   ffmpegInstance = ffmpeg
   return ffmpeg
 }
+
 
 function resolveMimeType(container: ContainerFormat): string {
   if (container === 'mov') return 'video/quicktime'
@@ -165,14 +175,30 @@ export async function exportTimeline(
     throw new Error('Export cancelled')
   }
 
-  const data = ffmpeg.FS('readFile', outputName)
-  if (!data || data.length === 0) {
-    throw new Error('FFmpeg returned empty output')
-  }
+    const data = ffmpeg.FS('readFile', outputName)
 
-  const blob = new Blob([
-    data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
-  ], { type: mimeType })
+    if (!data || data.length === 0) {
+      // This would be the *true* cause of a 0 B download
+      console.error('[dmosh] FFmpeg returned empty output', {
+        outputName,
+        container: settings.container,
+        videoCodec: settings.videoCodec,
+        width,
+        height,
+        fps,
+        durationSeconds,
+      })
+      throw new Error('FFmpeg returned empty output')
+    }
+
+    // Simple, avoids any subtle buffer slicing issues
+    const blob = new Blob([data], { type: mimeType })
+
+    console.info('[dmosh] Export completed', {
+      outputName,
+      bytes: data.length,
+      blobSize: blob.size,
+    })
 
   try {
     ffmpeg.FS('unlink', outputName)
