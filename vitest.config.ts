@@ -5,6 +5,8 @@ export default defineConfig({
     // Use jsdom for React component tests (fixes `document is not defined`)
     environment: "jsdom",
 
+    setupFiles: ["./tests/setupVitest.ts"],
+
     // IMPORTANT: Don't let Vitest touch Playwright specs
     exclude: [
       "tests/e2e/**",    // ⬅️ exclude Playwright tests
