@@ -8,6 +8,11 @@ import type { Project } from '../../src/engine/types'
 import { ProjectProvider, useProject } from '../../src/shared/hooks/useProject'
 
 const downloadJobResultMock = vi.fn()
+const exportTimelineMock = vi.fn(async () => ({
+  blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp4' }),
+  mimeType: 'video/mp4',
+  fileName: 'queued-test.mp4',
+}))
 
 vi.mock('../../src/editor/downloadHelpers', async () => {
   const actual = await vi.importActual<typeof import('../../src/editor/downloadHelpers')>(
@@ -18,6 +23,10 @@ vi.mock('../../src/editor/downloadHelpers', async () => {
     downloadJobResult: (...args: unknown[]) => downloadJobResultMock(...args),
   }
 })
+
+vi.mock('../../src/engine/export', () => ({
+  exportTimeline: (...args: unknown[]) => exportTimelineMock(...args),
+}))
 
 const project: Project = {
   version: '0.1',
