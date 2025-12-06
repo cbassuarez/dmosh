@@ -20,12 +20,13 @@ vi.mock('../../src/editor/downloadHelpers', async () => {
   )
   return {
     ...actual,
-    downloadJobResult: (...args: unknown[]) => downloadJobResultMock(...args),
+    downloadJobResult: (...args: Parameters<typeof actual.downloadJobResult>) =>
+      downloadJobResultMock(...args),
   }
 })
 
 vi.mock('../../src/engine/export', () => ({
-  exportTimeline: (...args: unknown[]) => exportTimelineMock(...args),
+  exportTimeline: (...args: Parameters<typeof exportTimelineMock>) => exportTimelineMock(...args),
 }))
 
 const project: Project = {
