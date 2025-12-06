@@ -19,7 +19,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      VITE_EXPORT_API_BASE: ${{ secrets.VITE_EXPORT_API_BASE }}
+      VITE_EXPORT_API_BASE: https://dmosh-export-service.onrender.com
       VITE_EXPORT_AUTH_TOKEN: ${{ secrets.VITE_EXPORT_AUTH_TOKEN }}
 
     steps:
