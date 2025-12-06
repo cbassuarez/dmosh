@@ -33,49 +33,57 @@ async function getFFmpeg(): Promise<FFmpeg> {
     console.info('[dmosh] getFFmpeg: creating instance')
   }
 
-    // Dynamic import to avoid Rollup export-shape issues and handle multiple module layouts
-    const mod = (await import('@ffmpeg/ffmpeg')) as FFmpegModuleShape
+  // Dynamic import; we’ll handle multiple possible shapes
+  const mod: unknown = await import('@ffmpeg/ffmpeg')
 
-    let createFFmpegFn: FFmpegCreateFn | undefined
+  // We’ll treat the module as `any` for construction, then cast to FFmpeg
+  const anyMod = mod as {
+    createFFmpeg?: (options?: { log?: boolean; corePath?: string }) => unknown
+    FFmpeg?: new (options?: { log?: boolean; corePath?: string }) => unknown
+    default?: unknown
+  }
 
-    // 1) Named export: { createFFmpeg }
-    if (typeof mod.createFFmpeg === 'function') {
-      createFFmpegFn = mod.createFFmpeg
+  let instance: unknown
+
+  // 1) Named `createFFmpeg` export: { createFFmpeg }
+  if (typeof anyMod.createFFmpeg === 'function') {
+    instance = anyMod.createFFmpeg({ log: true })
+  }
+  // 2) Named FFmpeg class: { FFmpeg } – construct directly
+  else if (typeof anyMod.FFmpeg === 'function') {
+    instance = new anyMod.FFmpeg({ log: true })
+  }
+  // 3) Default object with createFFmpeg: { default: { createFFmpeg } }
+  else if (
+    anyMod.default &&
+    typeof anyMod.default === 'object' &&
+    'createFFmpeg' in anyMod.default &&
+    typeof (anyMod.default as { createFFmpeg?: (options?: { log?: boolean }) => unknown }).createFFmpeg === 'function'
+  ) {
+    instance = (anyMod.default as { createFFmpeg: (options?: { log?: boolean }) => unknown }).createFFmpeg({ log: true })
+  }
+  // 4) Default function: { default: function } – treat as constructor/factory
+  else if (typeof anyMod.default === 'function') {
+    instance = (anyMod.default as (options?: { log?: boolean }) => unknown)({ log: true })
+  } else {
+    // If we get here, the module shape is genuinely unexpected
+    if (import.meta.env.DEV) {
+      const asObj = anyMod as Record<string, unknown>
+      const defaultVal = asObj.default as unknown
+      console.error('[dmosh] getFFmpeg: unrecognized @ffmpeg/ffmpeg module shape', {
+        keys: Object.keys(asObj),
+        defaultType: typeof defaultVal,
+        defaultKeys:
+          defaultVal && typeof defaultVal === 'object'
+            ? Object.keys(defaultVal as Record<string, unknown>)
+            : null,
+      })
     }
-    // 2) Default object with createFFmpeg: default.createFFmpeg
-    else if (
-      mod.default &&
-      typeof mod.default === 'object' &&
-      'createFFmpeg' in mod.default &&
-      typeof (mod.default as { createFFmpeg?: FFmpegCreateFn }).createFFmpeg === 'function'
-    ) {
-      createFFmpegFn = (mod.default as { createFFmpeg: FFmpegCreateFn }).createFFmpeg
-    }
-    // 3) Default function: default itself is createFFmpeg
-    else if (typeof mod.default === 'function') {
-      createFFmpegFn = mod.default as FFmpegCreateFn
-    }
+    throw new Error('Unable to construct FFmpeg instance from @ffmpeg/ffmpeg module')
+  }
 
-    if (!createFFmpegFn) {
-      const shapeInfo =
-        typeof mod === 'object'
-          ? {
-              hasCreateFFmpeg: 'createFFmpeg' in mod,
-              defaultType: typeof mod.default,
-            }
-          : { moduleType: typeof mod }
-
-      if (import.meta.env.DEV) {
-        console.error('[dmosh] getFFmpeg: could not locate createFFmpeg in @ffmpeg/ffmpeg', shapeInfo)
-      }
-
-      throw new Error('Unable to locate createFFmpeg in @ffmpeg/ffmpeg module')
-    }
-
-    const ffmpeg = createFFmpegFn({
-      log: true,
-    })
-
+  // At this point `instance` should quack like an FFmpeg: has `load`, `run`, `FS`, etc.
+  const ffmpeg = instance as FFmpeg
 
   try {
     await ffmpeg.load()
