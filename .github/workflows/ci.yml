@@ -18,13 +18,15 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      VITE_EXPORT_API_BASE: ${{ secrets.VITE_EXPORT_API_BASE }}
+      VITE_EXPORT_AUTH_TOKEN: ${{ secrets.VITE_EXPORT_AUTH_TOKEN }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node
-      # adjust version if you need, but 20 matches your logs
         uses: actions/setup-node@v4
         with:
           node-version: 20
