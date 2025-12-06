@@ -1,5 +1,5 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import type { RenderSettings, AudioCodec, ContainerFormat, VideoCodec } from './renderTypes'
+import type { RenderSettings, ContainerFormat } from './renderTypes'
 import type { Project, TimelineClip } from './types'
 
 export interface ExportProgressHandlers {
@@ -14,22 +14,6 @@ export interface ExportResult {
 }
 
 let ffmpegInstance: FFmpeg | null = null
-
-const VIDEO_CODEC_MAP: Record<VideoCodec, string> = {
-  h264: 'libx264',
-  h265: 'libx265',
-  vp9: 'libvpx-vp9',
-  av1: 'libaom-av1',
-  prores_422: 'prores_ks',
-  prores_422_hq: 'prores_ks',
-}
-
-const AUDIO_CODEC_MAP: Record<AudioCodec, string> = {
-  aac: 'aac',
-  pcm_s16le: 'pcm_s16le',
-  opus: 'libopus',
-  none: 'none',
-}
 
 const MIN_FALLBACK_DURATION_SECONDS = 1
 
@@ -69,8 +53,14 @@ function resolveMimeType(container: ContainerFormat): string {
 }
 
 function resolveDimensions(project: Project, settings: RenderSettings): { width: number; height: number } {
-  const baseWidth = settings.outputResolution === 'custom' ? settings.width ?? project.settings.width : project.settings.width
-  const baseHeight = settings.outputResolution === 'custom' ? settings.height ?? project.settings.height : project.settings.height
+  const baseWidth =
+    settings.outputResolution === 'custom'
+      ? settings.width ?? project.settings.width
+      : settings.width ?? project.settings.width
+  const baseHeight =
+    settings.outputResolution === 'custom'
+      ? settings.height ?? project.settings.height
+      : settings.height ?? project.settings.height
 
   const scale = settings.renderResolutionScale ?? 1
   const width = Math.max(1, Math.round(baseWidth * scale))
@@ -99,47 +89,39 @@ function computeTimelineDurationSeconds(project: Project, fps: number): number {
   return Math.max(MIN_FALLBACK_DURATION_SECONDS, durationSeconds)
 }
 
-function mapVideoCodec(codec: VideoCodec): string {
-  return VIDEO_CODEC_MAP[codec] ?? 'libx264'
-}
-
-function mapAudioCodec(codec: AudioCodec): string | null {
-  if (codec === 'none') return null
-  return AUDIO_CODEC_MAP[codec] ?? 'aac'
-}
-
-function buildFfmpegArgs(
+function buildTimelineStubArgs(
+  project: Project,
   settings: RenderSettings,
   outputName: string,
-  opts: { width: number; height: number; fps: number; durationSeconds: number; includeAudio: boolean },
-): string[] {
-  const videoCodec = mapVideoCodec(settings.videoCodec)
-  const pixelFormat = settings.pixelFormat || 'yuv420p'
-  const audioCodec = mapAudioCodec(settings.audioCodec)
+): { args: string[]; width: number; height: number; fps: number; durationSeconds: number } {
+  const { width, height } = resolveDimensions(project, settings)
+  const fps = resolveFps(project, settings) || 24
+  const durationSeconds = computeTimelineDurationSeconds(project, fps)
+  const pixelFormat = settings.pixelFormat ?? 'yuv420p'
 
   const args: string[] = [
     '-y',
     '-f',
     'lavfi',
     '-i',
-    `color=c=black:s=${opts.width}x${opts.height}:r=${opts.fps}:d=${opts.durationSeconds.toFixed(3)}`,
+    `color=c=black:s=${width}x${height}:r=${fps}:d=${durationSeconds.toFixed(3)}`,
+    '-pix_fmt',
+    pixelFormat,
   ]
 
-  if (opts.includeAudio && audioCodec) {
-    const channels = settings.audioChannels === 1 ? 'mono' : 'stereo'
-    args.push('-f', 'lavfi', '-i', `anullsrc=r=${settings.audioSampleRate}:cl=${channels}`)
-  }
-
-  args.push('-pix_fmt', pixelFormat, '-c:v', videoCodec, '-movflags', '+faststart')
-
-  if (opts.includeAudio && audioCodec) {
-    args.push('-shortest', '-c:a', audioCodec)
+  if (settings.videoCodec === 'h265') {
+    args.push('-c:v', 'libx265')
   } else {
-    args.push('-an')
+    args.push('-c:v', 'libx264')
   }
 
-  args.push('-t', opts.durationSeconds.toFixed(3), outputName)
-  return args
+  if (settings.container === 'mp4' || settings.container === 'mov') {
+    args.push('-movflags', '+faststart')
+  }
+
+  args.push('-an', '-t', durationSeconds.toFixed(3), outputName)
+
+  return { args, width, height, fps, durationSeconds }
 }
 
 export async function exportTimeline(
@@ -148,6 +130,10 @@ export async function exportTimeline(
   handlers: ExportProgressHandlers = {},
 ): Promise<ExportResult> {
   const { onProgress, signal } = handlers
+
+  if (settings.source.kind !== 'timeline') {
+    throw new Error(`exportTimeline: source.kind "${settings.source.kind}" not implemented`)
+  }
 
   if (import.meta.env.DEV) {
     console.info('[dmosh] exportTimeline: start', {
@@ -177,10 +163,7 @@ export async function exportTimeline(
     console.info('[dmosh] exportTimeline: ffmpeg loaded')
   }
 
-  const { width, height } = resolveDimensions(project, settings)
-  const fps = resolveFps(project, settings)
-  const durationSeconds = computeTimelineDurationSeconds(project, fps)
-  const outputName = `export.${settings.fileExtension || settings.container}`
+  const outputName = `out.${settings.fileExtension || settings.container}`
 
   const progressHandler = onProgress
     ? ({ progress }: { progress: number }) => {
@@ -193,20 +176,19 @@ export async function exportTimeline(
     ffmpeg.on('progress', progressHandler)
   }
 
-  const includeAudio = settings.includeAudio && settings.audioCodec !== 'none'
-  const args = buildFfmpegArgs(settings, outputName, { width, height, fps, durationSeconds, includeAudio })
+  const { args, width, height, fps, durationSeconds } = buildTimelineStubArgs(project, settings, outputName)
 
   const mimeType = resolveMimeType(settings.container)
 
   try {
     if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: ffmpeg.run', { args })
+      console.info('[dmosh] exportTimeline: ffmpeg.exec', { args })
     }
 
     const exitCode = await ffmpeg.exec(args)
 
     if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: ffmpeg.run completed')
+      console.info('[dmosh] exportTimeline: ffmpeg.exec completed')
     }
     if (exitCode !== 0) {
       throw new Error('Export failed')
@@ -216,7 +198,7 @@ export async function exportTimeline(
       ffmpeg.off('progress', progressHandler)
     }
     if (import.meta.env.DEV) {
-      console.error('[dmosh] exportTimeline: run failed', err)
+      console.error('[dmosh] exportTimeline: exec failed', err)
     }
     throw new Error(err instanceof Error ? err.message : 'Export failed')
   }
