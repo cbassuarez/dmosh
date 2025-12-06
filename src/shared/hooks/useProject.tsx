@@ -68,6 +68,7 @@ export type ProjectContextShape = {
   transport: TransportState
   viewer: ViewerState
   viewerRuntimeSettings: ViewerRuntimeSettings
+  isPreviewUrlActive: (url?: string) => boolean
   setProject: (next: Project | null) => void
   newProject: () => void
   loadProjectFromFile: (file: File) => Promise<void>
@@ -233,6 +234,15 @@ const ensureSourcePreviewUrls = (project: Project): Project => ({
   })),
 })
 
+const stripTransientSourceUrls = (project: Project): Project => ({
+  ...project,
+  sources: project.sources.map((source) => ({
+    ...source,
+    previewUrl: source.previewUrl?.startsWith('blob:') ? '' : source.previewUrl ?? '',
+    thumbnailUrl: source.thumbnailUrl?.startsWith('blob:') ? undefined : source.thumbnailUrl,
+  })),
+})
+
 const shortHash = (hash: string) => `${hash.slice(0, 8)}…${hash.slice(-4)}`
 
 const computeHash = async (file: File) => {
@@ -246,7 +256,7 @@ const computeHash = async (file: File) => {
 
 const persist = (project: Project | null) => {
   if (!project) return
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(project))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stripTransientSourceUrls(project)))
 }
 
 export const ProjectProvider = ({ children }: PropsWithChildren) => {
@@ -277,15 +287,25 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const renderQueueRef = useRef<RenderJob[]>([])
   const isMountedRef = useRef(true)
   const renderControllersRef = useRef<Map<string, AbortController>>(new Map())
+  const sessionPreviewUrlsRef = useRef<Set<string>>(new Set())
 
   const save = useCallback(
     (next: Project | null) => {
       if (next) {
         const normalized = ensureSourcePreviewUrls(ensureVideoTracks(next))
+        normalized.sources.forEach((source) => {
+          if (source.previewUrl?.startsWith('blob:')) {
+            sessionPreviewUrlsRef.current.add(source.previewUrl)
+          }
+        })
         setProject(normalized)
-        persist({ ...normalized, metadata: { ...normalized.metadata, updatedAt: new Date().toISOString() } })
+        const persistable = stripTransientSourceUrls({
+          ...normalized,
+          metadata: { ...normalized.metadata, updatedAt: new Date().toISOString() },
+        })
+        persist(persistable)
       } else {
-        cleanupSourcePreviewUrls(projectRef.current)
+        cleanupSourcePreviewUrls(projectRef.current, sessionPreviewUrlsRef.current)
         setProject(next)
       }
     },
@@ -298,7 +318,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       if (!stored) return
       const parsed = JSON.parse(stored)
       if (isProject(parsed)) {
-        setProject(ensureSourcePreviewUrls(ensureVideoTracks(parsed)))
+        setProject(ensureSourcePreviewUrls(ensureVideoTracks(stripTransientSourceUrls(parsed))))
       }
     } catch (err) {
       console.error(err)
@@ -325,7 +345,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     isMountedRef.current = false
     renderControllersRef.current.forEach((controller) => controller.abort())
     renderControllersRef.current.clear()
-    cleanupSourcePreviewUrls(projectRef.current)
+    cleanupSourcePreviewUrls(projectRef.current, sessionPreviewUrlsRef.current)
   }, [])
 
   useEffect(() => {
@@ -356,7 +376,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
   const newProject = useCallback(() => {
     setError(null)
-    cleanupSourcePreviewUrls(project)
+    cleanupSourcePreviewUrls(project, sessionPreviewUrlsRef.current)
     save(createEmptyProject())
   }, [project, save])
 
@@ -369,8 +389,8 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
           throw new Error('Invalid project schema')
         }
         setError(null)
-        cleanupSourcePreviewUrls(project)
-        save(parsed)
+        cleanupSourcePreviewUrls(project, sessionPreviewUrlsRef.current)
+        save(stripTransientSourceUrls(parsed))
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to parse project file'
         setError(message)
@@ -381,7 +401,8 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
   const exportProject = useCallback(() => {
     if (!project) return
-    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' })
+    const serializable = stripTransientSourceUrls(project)
+    const blob = new Blob([JSON.stringify(serializable, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
@@ -447,7 +468,11 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
           audioPresent: false,
           pixelFormat: 'unknown',
           durationFrames: projectedDuration,
-          previewUrl: URL.createObjectURL(file),
+          previewUrl: (() => {
+            const url = URL.createObjectURL(file)
+            sessionPreviewUrlsRef.current.add(url)
+            return url
+          })(),
           thumbnailUrl: undefined,
         })
       }
@@ -796,7 +821,22 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       ),
     )
 
+    if (import.meta.env.DEV) {
+      console.info('[dmosh] renderJob: start', {
+        jobId: job.id,
+        projectId: (project as { id?: string }).id ?? null,
+        fileName: job.settings.fileName,
+      })
+    }
+
     try {
+      if (import.meta.env.DEV) {
+        console.info('[dmosh] renderJob: calling exportTimeline', {
+          jobId: job.id,
+          settings: job.settings,
+        })
+      }
+
       const result = await exportTimeline(project, job.settings, {
         signal: controller.signal,
         onProgress: (value) => {
@@ -840,7 +880,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       const message = err instanceof Error ? err.message : 'Export failed'
 
       if (import.meta.env.DEV) {
-        console.error('[dmosh] render job failed', {
+        console.error('[dmosh] renderJob: FAILED', {
           jobId: job.id,
           projectId: (project as { id?: string }).id ?? null,
           fileName: job.settings.fileName,
@@ -858,12 +898,22 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     }
   }, [exportPreferences.autoDownloadOnComplete, updateRenderQueueState])
 
+  const isPreviewUrlActive = useCallback(
+    (url?: string) => {
+      if (!url) return false
+      if (!url.startsWith('blob:')) return true
+      return sessionPreviewUrlsRef.current.has(url)
+    },
+    [],
+  )
+
   const value = useMemo<ProjectContextShape>(
     () => ({
       project,
       selection,
       transport,
       viewer,
+      isPreviewUrlActive,
       viewerRuntimeSettings,
       setProject: save,
       newProject,
@@ -933,6 +983,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       pause,
       project,
       save,
+      isPreviewUrlActive,
       selectClip,
       selectMask,
       selectOperation,

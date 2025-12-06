@@ -120,6 +120,7 @@ const drawGlitchIntensity = (ctx: CanvasRenderingContext2D, width: number, heigh
 }
 
 const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxHeight }: VideoViewportProps) => {
+  const { isPreviewUrlActive } = useProject()
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
@@ -127,8 +128,14 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
   const clip = useMemo(() => getActiveClipAtFrame(project, frame), [project, frame])
   const source = useMemo(() => project.sources.find((s) => s.id === clip?.sourceId), [clip?.sourceId, project.sources])
 
+  const previewUrl = source?.previewUrl
+  const safePreviewUrl =
+    typeof previewUrl === 'string' && previewUrl.startsWith('blob:') && !isPreviewUrlActive(previewUrl)
+      ? undefined
+      : previewUrl
+
   useEffect(() => {
-    if (!videoRef.current || !clip || !source?.previewUrl) return
+    if (!videoRef.current || !clip || !safePreviewUrl) return
     const clipOffset = frame - clip.timelineStartFrame
     const clipLocalFrame = clip.startFrame + clipOffset
     const timeSeconds = clipLocalFrame / project.timeline.fps
@@ -140,7 +147,7 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
         /* noop */
       }
     }
-  }, [clip, frame, project.timeline.fps, source?.previewUrl])
+  }, [clip, frame, project.timeline.fps, safePreviewUrl])
 
   useEffect(() => {
     const canvas = overlayRef.current
@@ -194,7 +201,7 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
     source,
   ])
 
-  if (!clip || !source?.previewUrl) {
+  if (!clip || !safePreviewUrl) {
     return (
       <div className="flex h-full w-full items-center justify-center text-xs text-slate-400" data-testid={`viewport-${kind}`}>
         No clip under playhead
@@ -206,7 +213,7 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
     <div ref={containerRef} className="relative h-full w-full" data-testid={`viewport-${kind}`}>
       <video
         ref={videoRef}
-        src={source.previewUrl}
+        src={safePreviewUrl}
         muted
         playsInline
         preload="metadata"
