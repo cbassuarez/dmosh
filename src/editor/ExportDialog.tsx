@@ -280,6 +280,23 @@ export const ExportDialog = ({ project, isOpen, onClose }: Props) => {
       fileExtension: containerExtensions[settings.container],
       source: createSourceForTarget(targetKind, project, region, selectedClipId, selectedSourceId),
     }
+
+    if (import.meta.env.DEV) {
+      console.info('[dmosh] UI: export requested', {
+        projectId: (project as { id?: string }).id ?? null,
+        settings: {
+          fileName: nextSettings.fileName,
+          container: nextSettings.container,
+          videoCodec: nextSettings.videoCodec,
+          audioCodec: nextSettings.audioCodec,
+          width: nextSettings.width,
+          height: nextSettings.height,
+          fpsMode: nextSettings.fpsMode,
+          fps: nextSettings.fps,
+        },
+      })
+    }
+
     addRenderJob({ id: nextSettings.id, projectId: project.metadata.name ?? 'project', settings: nextSettings })
     startRenderJob(nextSettings.id)
     setValidationError('')

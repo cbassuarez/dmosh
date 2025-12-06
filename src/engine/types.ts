@@ -55,12 +55,13 @@ export interface NormalizationError {
   message: string
 }
 
-export const cleanupSourcePreviewUrls = (project?: Project | null) => {
+export const cleanupSourcePreviewUrls = (project?: Project | null, activeUrls?: Set<string>) => {
   if (!project) return
   project.sources.forEach((source) => {
     if (source.previewUrl?.startsWith('blob:')) {
       try {
         URL.revokeObjectURL(source.previewUrl)
+        activeUrls?.delete(source.previewUrl)
       } catch {
         /* noop */
       }

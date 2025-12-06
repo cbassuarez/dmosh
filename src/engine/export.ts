@@ -174,7 +174,7 @@ export async function exportTimeline(
   const ffmpeg = await getFFmpeg()
 
   if (import.meta.env.DEV) {
-    console.info('[dmosh] exportTimeline: ffmpeg instance loaded')
+    console.info('[dmosh] exportTimeline: ffmpeg loaded')
   }
 
   const { width, height } = resolveDimensions(project, settings)
@@ -200,13 +200,13 @@ export async function exportTimeline(
 
   try {
     if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: run', { args })
+      console.info('[dmosh] exportTimeline: ffmpeg.run', { args })
     }
 
     const exitCode = await ffmpeg.exec(args)
 
     if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: run completed')
+      console.info('[dmosh] exportTimeline: ffmpeg.run completed')
     }
     if (exitCode !== 0) {
       throw new Error('Export failed')
