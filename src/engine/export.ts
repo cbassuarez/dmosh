@@ -1,4 +1,4 @@
-import { FFmpeg } from '@ffmpeg/ffmpeg'
+import { createFFmpeg, type FFmpeg } from '@ffmpeg/ffmpeg'
 import type { RenderSettings, ContainerFormat } from './renderTypes'
 import type { Project } from './types'
 
@@ -22,7 +22,9 @@ async function getFFmpeg(): Promise<FFmpeg> {
     console.info('[dmosh] getFFmpeg: creating instance')
   }
 
-  const ffmpeg = new FFmpeg()
+  const ffmpeg = createFFmpeg({
+    log: true,
+  })
 
   try {
     await ffmpeg.load()
@@ -140,7 +142,7 @@ export async function exportTimeline(
 
   try {
     if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: ffmpeg.exec', { args })
+      console.info('[dmosh] exportTimeline: ffmpeg.run', { args })
     }
 
     await ffmpeg.exec(args, undefined, { signal })
@@ -170,7 +172,7 @@ export async function exportTimeline(
     console.info('[dmosh] exportTimeline: FS readFile', { outputName })
   }
 
-  const data = await ffmpeg.readFile(outputName)
+  const data = ffmpeg.FS('readFile', outputName)
 
   if (import.meta.env.DEV) {
     console.info('[dmosh] exportTimeline: FS readFile done', {
@@ -208,7 +210,7 @@ export async function exportTimeline(
   }
 
   try {
-    await ffmpeg.deleteFile(outputName)
+    ffmpeg.FS('unlink', outputName)
   } catch {
     /* ignore cleanup errors */
   }
