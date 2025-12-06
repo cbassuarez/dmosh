@@ -2,17 +2,6 @@ import type { FFmpeg } from '@ffmpeg/ffmpeg'
 import type { RenderSettings, ContainerFormat } from './renderTypes'
 import type { Project } from './types'
 
-type FFmpegCreateFn = (options?: { log?: boolean; corePath?: string }) => FFmpeg
-
-type FFmpegModuleShape = {
-  createFFmpeg?: FFmpegCreateFn
-  default?:
-    | {
-        createFFmpeg?: FFmpegCreateFn
-      }
-    | FFmpegCreateFn
-}
-
 export interface ExportProgressHandlers {
   onProgress?: (value: number) => void
   signal?: AbortSignal
