@@ -84,15 +84,15 @@ const { setProject, addRenderJob, updateRenderJob } = useProject()
 useEffect(() => {
 setProject(project)
 addRenderJob({
-id: 'job-1',
-projectId: project.metadata.name,
-settings: defaultSettings,
+  id: 'job-1',
+  projectId: project.metadata.name,
+  settings: defaultSettings,
 })
 
 // Simulate that the job has already completed successfully
 const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp4' })
 updateRenderJob('job-1', {
-  status: 'completed',
+  status: 'complete',
   progress: 100,
   result: {
     mimeType: 'video/mp4',
@@ -112,12 +112,12 @@ render( <ProjectProvider> <SeedCompletedJob /> <RenderQueuePanel /> </ProjectPro
 )
 // The job title should appear in the queue
 const jobTitle = await screen.findByText('queued-test')
-expect(jobTitle).toBeInTheDocument()
+  expect(jobTitle).toBeInTheDocument()
 
-// Wait until the status shows "completed" somewhere in the panel
-await waitFor(() => {
-  expect(screen.getByText(/completed/i)).toBeInTheDocument()
-})
+  // Wait until the status shows "completed" somewhere in the panel
+  await waitFor(() => {
+    expect(screen.getAllByText(/complete/i).length).toBeGreaterThan(0)
+  })
 
 // There should be a Download button for that completed job
 const downloadButton = screen.getByRole('button', { name: 'Download' })

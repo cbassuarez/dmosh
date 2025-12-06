@@ -1,94 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { exportTimeline } from '../../src/engine/export'
 import type { Project } from '../../src/engine/types'
 import type { RenderSettings } from '../../src/engine/renderTypes'
-
-// --- 1. Mock @ffmpeg/ffmpeg so we never hit the real WASM in tests ---
-
-type MockFfmpegInstance = {
-  load: () => Promise<void>
-  run: (...args: string[]) => Promise<void>
-  on: (...args: unknown[]) => void
-  off: (...args: unknown[]) => void
-  readFile: (path: string) => Promise<Uint8Array>
-  FS: (op: 'readFile' | 'writeFile' | 'unlink', path: string, data?: Uint8Array) => Uint8Array | void
-  setProgress: (handler: (progress: { ratio?: number; progress?: number }) => void) => void
-}
-
-// Internal in-memory FS for the mock
-const mockFs = new Map<string, Uint8Array>()
-
-// Minimal FFmpeg mock implementing the methods used by exportTimeline
-const mockFfmpegInstance: MockFfmpegInstance = {
-  load: vi.fn(async () => {
-    // no-op
-  }),
-  run: vi.fn<MockFfmpegInstance['run']>(async (...args: string[]) => {
-    // Simulate FFmpeg writing an MP4 file to the FS.
-    // We don't care about real encoding; we just need non-empty bytes.
-    const fakeData = new Uint8Array([1, 2, 3, 4, 5])
-    const outputName = args[args.length - 1] ?? 'out.mp4'
-    mockFs.set(outputName, fakeData)
-  }),
-  on: vi.fn(),
-  off: vi.fn(),
-  readFile: vi.fn(async (path: string) => mockFfmpegInstance.FS('readFile', path) as Uint8Array),
-  FS: vi.fn((op: 'readFile' | 'writeFile' | 'unlink', path: string, data?: Uint8Array) => {
-    if (op === 'writeFile') {
-      if (!data) throw new Error('writeFile requires data')
-      mockFs.set(path, data)
-      return
-    }
-
-    if (op === 'readFile') {
-      // In tests we don't care *how* the file got there, only that exportTimeline
-      // attempts to read something and gets non-empty bytes back.
-      let value = mockFs.get(path)
-      if (!value) {
-        // Provide a default fake buffer instead of throwing, so tests don't
-        // depend on the exact ffmpeg.run argument ordering.
-        value = new Uint8Array([1, 2, 3, 4, 5])
-        mockFs.set(path, value)
-      }
-      return value
-    }
-
-    if (op === 'unlink') {
-      mockFs.delete(path)
-      return
-    }
-
-    throw new Error(`Unsupported FS op: ${op}`)
-
-  }),
-  setProgress: vi.fn(),
-}
-
-// Mock createFFmpeg so exportTimeline uses our mock instance
-vi.mock('@ffmpeg/ffmpeg', () => {
-  const module = {
-    createFFmpeg: () => mockFfmpegInstance,
-    FFmpeg: class {},
-    fetchFile: (input: ArrayBuffer | Uint8Array | Blob | File | string) => {
-      if (input instanceof Uint8Array) return input
-      if (typeof input === 'string') return new TextEncoder().encode(input)
-      if (input instanceof ArrayBuffer) return new Uint8Array(input)
-      if (input instanceof Blob) {
-        return new Uint8Array()
-      }
-      return new Uint8Array()
-    },
-  }
-
-  return {
-    ...module,
-    default: module,
-  }
-})
-
-// Now import exportTimeline AFTER the module mock, so it picks up the mocked FFmpeg.
-import { exportTimeline } from '../../src/engine/export'
-
-// --- 2. Minimal project + settings to exercise exportTimeline ---
 
 const project: Project = {
   version: '0.1',
@@ -145,36 +58,36 @@ const defaultSettings: RenderSettings = {
 }
 
 describe('exportTimeline', () => {
-  beforeEach(() => {
-    mockFs.clear()
-    vi.clearAllMocks()
-  })
-
-  it('produces a non-empty blob from ffmpeg output', async () => {
+  it('returns a deterministic stubbed blob and progress updates', async () => {
     const progressSpy = vi.fn()
 
     const result = await exportTimeline(project, defaultSettings, {
       onProgress: progressSpy,
     })
 
-    // The engine should return a Blob with > 0 bytes
     expect(result.blob).toBeInstanceOf(Blob)
     expect(result.blob.size).toBeGreaterThan(0)
-
-    // It should report a sensible mime type and file name
     expect(result.mimeType).toBe('video/mp4')
     expect(result.fileName).toBe('engine-test.mp4')
 
-    // And our mock FFmpeg should have been called with some args
-    expect(mockFfmpegInstance.load).toHaveBeenCalled()
-    expect(mockFfmpegInstance.run).toHaveBeenCalled()
+    expect(progressSpy).toHaveBeenCalled()
+    progressSpy.mock.calls.forEach(([value]) => {
+      expect(value).toBeGreaterThanOrEqual(0)
+      expect(value).toBeLessThanOrEqual(100)
+    })
+  })
 
-    // Progress callback may or may not be called, depending on implementation;
-    // just assert it's usable and doesn’t throw when invoked:
-    if (progressSpy.mock.calls.length === 0) {
-      progressSpy(0)
-      progressSpy(100)
-      expect(progressSpy).toHaveBeenCalled()
+  it('respects custom container and filename', async () => {
+    const customSettings: RenderSettings = {
+      ...defaultSettings,
+      container: 'mov',
+      fileName: 'custom-name',
+      fileExtension: 'mov',
     }
+
+    const result = await exportTimeline(project, customSettings)
+
+    expect(result.mimeType).toBe('video/quicktime')
+    expect(result.fileName).toBe('custom-name.mov')
   })
 })

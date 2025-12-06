@@ -1,7 +1,13 @@
 import type { RenderJob } from '../shared/hooks/useProject'
 
 export function canDownloadJob(job: RenderJob): boolean {
-  if (job.status !== 'completed' || !job.result?.blob) return false
+  if (job.status !== 'complete') {
+    return false
+  }
+
+  if (!job.result?.blob) {
+    return !!job.remoteJobId
+  }
 
   // Prefer the explicit size we store on the job, fall back to blob.size
   const size = job.result.size ?? job.result.blob.size
