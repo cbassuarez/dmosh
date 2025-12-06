@@ -838,6 +838,16 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Export failed'
+
+      if (import.meta.env.DEV) {
+        console.error('[dmosh] render job failed', {
+          jobId: job.id,
+          projectId: (project as { id?: string }).id ?? null,
+          fileName: job.settings.fileName,
+          error: err,
+          message,
+        })
+      }
       updateRenderQueueState((prev) =>
         prev.map((entry) =>
           entry.id === id ? { ...entry, status: 'error', errorMessage: message } : entry,

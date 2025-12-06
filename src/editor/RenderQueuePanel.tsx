@@ -92,7 +92,11 @@ const RenderQueuePanel = () => {
                   <StatusBadge status={job.status} />
                 </div>
                 <ProgressBar value={job.progress} />
-                {job.errorMessage && <p className="text-[11px] text-rose-300">{job.errorMessage}</p>}
+                {job.status === 'error' && job.errorMessage && (
+                  <div className="mt-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-200">
+                    {job.errorMessage}
+                  </div>
+                )}
                 <div className="flex justify-end gap-2">
                   {isQueued && (
                     <button
