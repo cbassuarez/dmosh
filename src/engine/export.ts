@@ -2,6 +2,17 @@ import type { FFmpeg } from '@ffmpeg/ffmpeg'
 import type { RenderSettings, ContainerFormat } from './renderTypes'
 import type { Project } from './types'
 
+type FFmpegCreateFn = (options?: { log?: boolean; corePath?: string }) => FFmpeg
+
+type FFmpegModuleShape = {
+  createFFmpeg?: FFmpegCreateFn
+  default?:
+    | {
+        createFFmpeg?: FFmpegCreateFn
+      }
+    | FFmpegCreateFn
+}
+
 export interface ExportProgressHandlers {
   onProgress?: (value: number) => void
   signal?: AbortSignal
@@ -22,12 +33,49 @@ async function getFFmpeg(): Promise<FFmpeg> {
     console.info('[dmosh] getFFmpeg: creating instance')
   }
 
-  // Dynamic import to avoid Rollup export-shape issues
-  const { createFFmpeg } = await import('@ffmpeg/ffmpeg')
+    // Dynamic import to avoid Rollup export-shape issues and handle multiple module layouts
+    const mod = (await import('@ffmpeg/ffmpeg')) as FFmpegModuleShape
 
-  const ffmpeg = createFFmpeg({
-    log: true,
-  })
+    let createFFmpegFn: FFmpegCreateFn | undefined
+
+    // 1) Named export: { createFFmpeg }
+    if (typeof mod.createFFmpeg === 'function') {
+      createFFmpegFn = mod.createFFmpeg
+    }
+    // 2) Default object with createFFmpeg: default.createFFmpeg
+    else if (
+      mod.default &&
+      typeof mod.default === 'object' &&
+      'createFFmpeg' in mod.default &&
+      typeof (mod.default as { createFFmpeg?: FFmpegCreateFn }).createFFmpeg === 'function'
+    ) {
+      createFFmpegFn = (mod.default as { createFFmpeg: FFmpegCreateFn }).createFFmpeg
+    }
+    // 3) Default function: default itself is createFFmpeg
+    else if (typeof mod.default === 'function') {
+      createFFmpegFn = mod.default as FFmpegCreateFn
+    }
+
+    if (!createFFmpegFn) {
+      const shapeInfo =
+        typeof mod === 'object'
+          ? {
+              hasCreateFFmpeg: 'createFFmpeg' in mod,
+              defaultType: typeof mod.default,
+            }
+          : { moduleType: typeof mod }
+
+      if (import.meta.env.DEV) {
+        console.error('[dmosh] getFFmpeg: could not locate createFFmpeg in @ffmpeg/ffmpeg', shapeInfo)
+      }
+
+      throw new Error('Unable to locate createFFmpeg in @ffmpeg/ffmpeg module')
+    }
+
+    const ffmpeg = createFFmpegFn({
+      log: true,
+    })
+
 
   try {
     await ffmpeg.load()
