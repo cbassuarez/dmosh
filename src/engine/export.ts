@@ -1,4 +1,3 @@
-import { createFFmpeg, type FFmpeg } from '@ffmpeg/ffmpeg'
 import type { RenderSettings, ContainerFormat } from './renderTypes'
 import type { Project } from './types'
 
@@ -13,31 +12,94 @@ export interface ExportResult {
   fileName: string
 }
 
-let ffmpegInstance: FFmpeg | null = null
-
-type FfmpegWithFs = FFmpeg & {
-  FS: (op: 'readFile' | 'unlink', path: string) => Uint8Array | void
+// Minimal FFmpeg instance surface we rely on
+type FfmpegFactoryOptions = {
+  log?: boolean
+  corePath?: string
 }
 
-type ProgressEvent = { ratio?: number; progress?: number }
+type FfmpegInstance = {
+  load: () => Promise<void>
 
-type FfmpegWithProgress = FFmpeg & {
-  setProgress?: (handler: (progress: ProgressEvent) => void) => void
-  on?: (event: 'progress', handler: (progress: ProgressEvent) => void) => void
-  off?: (event: 'progress', handler: (progress: ProgressEvent) => void) => void
+  // Old API
+  run?: (...args: string[]) => Promise<unknown>
+  FS?: (op: 'readFile' | 'unlink', path: string) => Uint8Array | void
+
+  // New API
+  exec?: (args: string[], options?: { signal?: AbortSignal }) => Promise<unknown>
+  readFile?: (path: string) => Uint8Array | Promise<Uint8Array>
+  deleteFile?: (path: string) => Promise<void> | void
+
+  // Progress APIs (we support both shapes)
+  on?: (event: 'progress', handler: { ratio?: number; progress?: number }) => void
+  off?: (event: 'progress', handler: { ratio?: number; progress?: number }) => void
+  setProgress?: (handler: { ratio?: number; progress?: number }) => void
 }
 
-async function getFFmpeg(): Promise<FFmpeg> {
+type FfmpegFactory = (options?: FfmpegFactoryOptions) => FfmpegInstance
+
+type FfmpegModuleLike = {
+  default?: unknown
+  createFFmpeg?: unknown
+  FFmpeg?: unknown
+}
+
+// Cached singleton
+let ffmpegInstance: FfmpegInstance | null = null
+
+async function getFFmpeg(): Promise<FfmpegInstance> {
   if (ffmpegInstance) return ffmpegInstance
 
   if (import.meta.env.DEV) {
     console.info('[dmosh] getFFmpeg: creating instance')
   }
 
-  const ffmpeg = createFFmpeg({ log: true })
+  const imported = (await import('@ffmpeg/ffmpeg')) as unknown
+  const mod = imported as FfmpegModuleLike & Record<string, unknown>
+
+  let factory: FfmpegFactory | null = null
+
+  // 1) Named createFFmpeg export
+  if (typeof mod.createFFmpeg === 'function') {
+    factory = mod.createFFmpeg as FfmpegFactory
+  }
+  // 2) Default object with createFFmpeg
+  else if (
+    mod.default &&
+    typeof (mod.default as { createFFmpeg?: unknown }).createFFmpeg === 'function'
+  ) {
+    const d = mod.default as { createFFmpeg: FfmpegFactory }
+    factory = d.createFFmpeg
+  }
+  // 3) FFmpeg class
+  else if (typeof mod.FFmpeg === 'function') {
+    const Ctor = mod.FFmpeg as new (options?: FfmpegFactoryOptions) => FfmpegInstance
+    factory = (options?: FfmpegFactoryOptions) => new Ctor(options)
+  }
+  // 4) Default factory function
+  else if (typeof mod.default === 'function') {
+    factory = mod.default as FfmpegFactory
+  }
+
+  if (!factory) {
+    if (import.meta.env.DEV) {
+      const defaultVal = mod.default
+      console.error('[dmosh] getFFmpeg: unable to locate FFmpeg factory', {
+        keys: Object.keys(mod),
+        defaultType: typeof defaultVal,
+        defaultKeys:
+          defaultVal && typeof defaultVal === 'object'
+            ? Object.keys(defaultVal as Record<string, unknown>)
+            : null,
+      })
+    }
+    throw new Error('Unable to locate FFmpeg factory in @ffmpeg/ffmpeg module')
+  }
+
+  const instance = factory({ log: true })
 
   try {
-    await ffmpeg.load()
+    await instance.load()
   } catch (err) {
     if (import.meta.env.DEV) {
       console.error('[dmosh] getFFmpeg: load failed', err)
@@ -45,13 +107,13 @@ async function getFFmpeg(): Promise<FFmpeg> {
     throw err
   }
 
-  ffmpegInstance = ffmpeg
+  ffmpegInstance = instance
 
   if (import.meta.env.DEV) {
     console.info('[dmosh] getFFmpeg: load completed')
   }
 
-  return ffmpeg
+  return instance
 }
 
 function resolveMimeType(container: ContainerFormat): string {
@@ -98,32 +160,86 @@ function buildTimelineStubArgs(settings: RenderSettings, outputName: string): st
   return args
 }
 
-function attachProgress(ffmpeg: FFmpeg, onProgress?: (value: number) => void): () => void {
+function attachProgress(
+  ffmpeg: FfmpegInstance,
+  onProgress?: (value: number) => void,
+): () => void {
   if (!onProgress) return () => {}
 
-  const ffmpegWithProgress = ffmpeg as FfmpegWithProgress
-
-  const handler = ({ ratio, progress }: ProgressEvent) => {
+  const handler = ({ ratio, progress }: { ratio?: number; progress?: number }) => {
     const raw = ratio ?? progress ?? 0
     const value = Math.max(0, Math.min(100, raw * 100))
     onProgress(value)
   }
 
-  if (typeof ffmpegWithProgress.setProgress === 'function') {
-    ffmpegWithProgress.setProgress(handler)
+  // Newer API: setProgress(handler)
+  if (typeof ffmpeg.setProgress === 'function') {
+    ffmpeg.setProgress(handler)
     return () => {
-      ffmpegWithProgress.setProgress?.(() => {})
+      ffmpeg.setProgress?.(() => {})
     }
   }
 
-  if (typeof ffmpegWithProgress.on === 'function') {
-    ffmpegWithProgress.on('progress', handler)
+  // Older API: on('progress', handler) / off('progress', handler)
+  if (typeof ffmpeg.on === 'function') {
+    ffmpeg.on('progress', handler)
     return () => {
-      ffmpegWithProgress.off?.('progress', handler)
+      ffmpeg.off?.('progress', handler)
     }
   }
 
+  // No-op if no progress API available
   return () => {}
+}
+
+async function runFfmpeg(args: string[], ffmpeg: FfmpegInstance, signal?: AbortSignal) {
+  // Prefer newer exec API
+  if (typeof ffmpeg.exec === 'function') {
+    if (signal) {
+      await ffmpeg.exec(args, { signal })
+    } else {
+      await ffmpeg.exec(args)
+    }
+    return
+  }
+
+  // Fallback to older run API
+  if (typeof ffmpeg.run === 'function') {
+    await ffmpeg.run(...args)
+    return
+  }
+
+  throw new Error('FFmpeg instance does not provide exec or run')
+}
+
+async function readOutput(ffmpeg: FfmpegInstance, outputName: string): Promise<Uint8Array> {
+  // Newer readFile API
+  if (typeof ffmpeg.readFile === 'function') {
+    const value = await ffmpeg.readFile(outputName)
+    if (value instanceof Uint8Array) return value
+    return new Uint8Array(value)
+  }
+
+  // Older FS API
+  if (typeof ffmpeg.FS === 'function') {
+    const result = ffmpeg.FS('readFile', outputName)
+    if (result instanceof Uint8Array) return result
+    throw new Error('FFmpeg.FS("readFile") did not return Uint8Array')
+  }
+
+  throw new Error('FFmpeg instance does not provide readFile or FS("readFile")')
+}
+
+async function cleanupOutput(ffmpeg: FfmpegInstance, outputName: string): Promise<void> {
+  try {
+    if (typeof ffmpeg.deleteFile === 'function') {
+      await ffmpeg.deleteFile(outputName)
+    } else if (typeof ffmpeg.FS === 'function') {
+      ffmpeg.FS('unlink', outputName)
+    }
+  } catch {
+    // ignore cleanup errors
+  }
 }
 
 export async function exportTimeline(
@@ -168,19 +284,20 @@ export async function exportTimeline(
   const args = buildTimelineStubArgs(settings, outputName)
   const mimeType = resolveMimeType(settings.container)
 
-  const restoreProgress = attachProgress(ffmpeg, onProgress)
+  const restoreProgress = attachProgress(ffmpeg, onProgress ?? undefined)
 
   try {
     if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: ffmpeg.run', { args })
+      console.info('[dmosh] exportTimeline: ffmpeg.run/exec', { args })
     }
 
-    await ffmpeg.run(...args)
+    await runFfmpeg(args, ffmpeg, signal)
 
     if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: ffmpeg run completed')
+      console.info('[dmosh] exportTimeline: ffmpeg.run/exec completed')
     }
   } catch (err) {
+    restoreProgress()
     if (import.meta.env.DEV) {
       console.error('[dmosh] exportTimeline: run failed', err)
     }
@@ -194,20 +311,19 @@ export async function exportTimeline(
   }
 
   if (import.meta.env.DEV) {
-    console.info('[dmosh] exportTimeline: FS readFile', { outputName })
+    console.info('[dmosh] exportTimeline: readOutput', { outputName })
   }
 
-  const ffmpegWithFs = ffmpeg as FfmpegWithFs
-  const data = ffmpegWithFs.FS('readFile', outputName) as Uint8Array | undefined
+  const data = await readOutput(ffmpeg, outputName)
 
   if (import.meta.env.DEV) {
-    console.info('[dmosh] exportTimeline: FS readFile done', {
+    console.info('[dmosh] exportTimeline: readOutput done', {
       outputName,
-      length: data?.length ?? 0,
+      length: data.length,
     })
   }
 
-  if (!data || data.length === 0) {
+  if (data.length === 0) {
     const msg = `FFmpeg returned empty output for ${outputName}`
     if (import.meta.env.DEV) {
       console.error('[dmosh] exportTimeline: empty output', {
@@ -234,11 +350,7 @@ export async function exportTimeline(
     })
   }
 
-  try {
-    ffmpegWithFs.FS('unlink', outputName)
-  } catch {
-    // ignore cleanup errors
-  }
+  await cleanupOutput(ffmpeg, outputName)
 
   return {
     blob,
