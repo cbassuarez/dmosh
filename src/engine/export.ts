@@ -1,6 +1,6 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import type { RenderSettings, ContainerFormat } from './renderTypes'
-import type { Project, TimelineClip } from './types'
+import type { Project } from './types'
 
 export interface ExportProgressHandlers {
   onProgress?: (value: number) => void
@@ -14,8 +14,6 @@ export interface ExportResult {
 }
 
 let ffmpegInstance: FFmpeg | null = null
-
-const MIN_FALLBACK_DURATION_SECONDS = 1
 
 async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegInstance) return ffmpegInstance
@@ -52,52 +50,11 @@ function resolveMimeType(container: ContainerFormat): string {
   return 'video/mp4'
 }
 
-function resolveDimensions(project: Project, settings: RenderSettings): { width: number; height: number } {
-  const baseWidth =
-    settings.outputResolution === 'custom'
-      ? settings.width ?? project.settings.width
-      : settings.width ?? project.settings.width
-  const baseHeight =
-    settings.outputResolution === 'custom'
-      ? settings.height ?? project.settings.height
-      : settings.height ?? project.settings.height
-
-  const scale = settings.renderResolutionScale ?? 1
-  const width = Math.max(1, Math.round(baseWidth * scale))
-  const height = Math.max(1, Math.round(baseHeight * scale))
-  return { width, height }
-}
-
-function resolveFps(project: Project, settings: RenderSettings): number {
-  if (settings.fpsMode === 'override' && settings.fps) return settings.fps
-  return settings.fpsMode === 'project' ? project.timeline.fps : project.settings.fps
-}
-
-function clipDurationInFrames(clip: TimelineClip): number {
-  return Math.max(0, clip.endFrame - clip.startFrame)
-}
-
-function computeTimelineDurationSeconds(project: Project, fps: number): number {
-  if (!project.timeline.clips.length) return MIN_FALLBACK_DURATION_SECONDS
-
-  const lastFrame = project.timeline.clips.reduce((acc, clip) => {
-    const clipLength = clipDurationInFrames(clip)
-    return Math.max(acc, clip.timelineStartFrame + clipLength)
-  }, 0)
-
-  const durationSeconds = lastFrame > 0 ? lastFrame / fps : MIN_FALLBACK_DURATION_SECONDS
-  return Math.max(MIN_FALLBACK_DURATION_SECONDS, durationSeconds)
-}
-
-function buildTimelineStubArgs(
-  project: Project,
-  settings: RenderSettings,
-  outputName: string,
-): { args: string[]; width: number; height: number; fps: number; durationSeconds: number } {
-  const { width, height } = resolveDimensions(project, settings)
-  const fps = resolveFps(project, settings) || 24
-  const durationSeconds = computeTimelineDurationSeconds(project, fps)
-  const pixelFormat = settings.pixelFormat ?? 'yuv420p'
+function buildTimelineStubArgs(settings: RenderSettings, outputName: string): string[] {
+  const width = settings.width ?? 640
+  const height = settings.height ?? 360
+  const fps = settings.fps ?? 24
+  const durationSeconds = 1
 
   const args: string[] = [
     '-y',
@@ -106,11 +63,13 @@ function buildTimelineStubArgs(
     '-i',
     `color=c=black:s=${width}x${height}:r=${fps}:d=${durationSeconds.toFixed(3)}`,
     '-pix_fmt',
-    pixelFormat,
+    settings.pixelFormat ?? 'yuv420p',
   ]
 
   if (settings.videoCodec === 'h265') {
     args.push('-c:v', 'libx265')
+  } else if (settings.videoCodec === 'vp9') {
+    args.push('-c:v', 'libvpx-vp9')
   } else {
     args.push('-c:v', 'libx264')
   }
@@ -119,9 +78,8 @@ function buildTimelineStubArgs(
     args.push('-movflags', '+faststart')
   }
 
-  args.push('-an', '-t', durationSeconds.toFixed(3), outputName)
-
-  return { args, width, height, fps, durationSeconds }
+  args.push('-an', outputName)
+  return args
 }
 
 export async function exportTimeline(
@@ -131,7 +89,10 @@ export async function exportTimeline(
 ): Promise<ExportResult> {
   const { onProgress, signal } = handlers
 
-  if (settings.source.kind !== 'timeline') {
+  const sourceKind = settings.source.kind
+  const supportsTimelineStub = ['timeline', 'project', 'source', 'clip'].includes(sourceKind)
+
+  if (!supportsTimelineStub) {
     throw new Error(`exportTimeline: source.kind "${settings.source.kind}" not implemented`)
   }
 
@@ -149,10 +110,6 @@ export async function exportTimeline(
     })
   }
 
-  if (settings.container === 'mp4' && settings.videoCodec === 'prores_422') {
-    throw new Error('ProRes is not supported in MP4 container')
-  }
-
   if (signal?.aborted) {
     throw new Error('Export cancelled')
   }
@@ -163,11 +120,12 @@ export async function exportTimeline(
     console.info('[dmosh] exportTimeline: ffmpeg loaded')
   }
 
-  const outputName = `out.${settings.fileExtension || settings.container}`
+  const outputName = `out.${settings.fileExtension || settings.container || 'mp4'}`
 
   const progressHandler = onProgress
-    ? ({ progress }: { progress: number }) => {
-        const value = Math.max(0, Math.min(100, progress * 100))
+    ? ({ ratio, progress }: { ratio?: number; progress?: number }) => {
+        const raw = ratio ?? progress ?? 0
+        const value = Math.max(0, Math.min(100, raw * 100))
         onProgress(value)
       }
     : null
@@ -176,7 +134,7 @@ export async function exportTimeline(
     ffmpeg.on('progress', progressHandler)
   }
 
-  const { args, width, height, fps, durationSeconds } = buildTimelineStubArgs(project, settings, outputName)
+  const args = buildTimelineStubArgs(settings, outputName)
 
   const mimeType = resolveMimeType(settings.container)
 
@@ -185,20 +143,17 @@ export async function exportTimeline(
       console.info('[dmosh] exportTimeline: ffmpeg.exec', { args })
     }
 
-    const exitCode = await ffmpeg.exec(args)
+    await ffmpeg.exec(args, undefined, { signal })
 
     if (import.meta.env.DEV) {
       console.info('[dmosh] exportTimeline: ffmpeg.exec completed')
-    }
-    if (exitCode !== 0) {
-      throw new Error('Export failed')
     }
   } catch (err) {
     if (progressHandler) {
       ffmpeg.off('progress', progressHandler)
     }
     if (import.meta.env.DEV) {
-      console.error('[dmosh] exportTimeline: exec failed', err)
+      console.error('[dmosh] exportTimeline: run failed', err)
     }
     throw new Error(err instanceof Error ? err.message : 'Export failed')
   }
@@ -212,38 +167,35 @@ export async function exportTimeline(
   }
 
   if (import.meta.env.DEV) {
-    console.info('[dmosh] exportTimeline: readFile', { outputName })
+    console.info('[dmosh] exportTimeline: FS readFile', { outputName })
   }
 
   const data = await ffmpeg.readFile(outputName)
 
   if (import.meta.env.DEV) {
-    console.info('[dmosh] exportTimeline: readFile done', {
+    console.info('[dmosh] exportTimeline: FS readFile done', {
       outputName,
       length: data?.length ?? 0,
     })
   }
 
-  const fileData = typeof data === 'string' ? new TextEncoder().encode(data) : data
-
-  if (!fileData || fileData.length === 0) {
+  if (!data || data.length === 0) {
     const msg = `FFmpeg returned empty output for ${outputName}`
     if (import.meta.env.DEV) {
       console.error('[dmosh] exportTimeline: empty output', {
         outputName,
         container: settings.container,
         videoCodec: settings.videoCodec,
-        width,
-        height,
-        fps,
-        durationSeconds,
+        width: settings.width,
+        height: settings.height,
+        fpsMode: settings.fpsMode,
+        fps: settings.fps,
       })
     }
     throw new Error(msg)
   }
 
-  // Simple, avoids any subtle buffer slicing issues
-  const blob = new Blob([fileData], { type: mimeType })
+  const blob = new Blob([data], { type: mimeType })
 
   const fileName = `${settings.fileName}.${settings.fileExtension ?? settings.container}`
 
