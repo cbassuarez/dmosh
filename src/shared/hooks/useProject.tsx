@@ -15,12 +15,11 @@ import {
   TimelineRange,
   TimelineTrack,
 } from '../../engine/types'
+import { postExportJob, getExportStatus, downloadExport } from '../exportApi'
 import type { RenderSettings } from '../../engine/renderTypes'
-import { exportTimeline } from '../../engine/export'
 import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerRuntimeSettings, ViewerState } from '../../editor/viewerState'
 import { MobileMode } from '../../editor/mobileTypes'
-import { canDownloadJob, downloadJobResult } from '../../editor/downloadHelpers'
 
 const STORAGE_KEY = 'datamosh-current-project'
 const EXPORT_PREFS_STORAGE_KEY = 'dmosh_export_prefs'
@@ -54,6 +53,10 @@ export interface RenderJob {
   progress: number
   errorMessage?: string
   result?: RenderJobResult
+  /**
+   * Backend export-service job id (if using remote rendering).
+   */
+  remoteJobId?: string
 }
 
 type TransportState = {
@@ -805,98 +808,205 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     updateRenderQueueState((prev) => prev.filter((job) => job.id !== id))
   }, [updateRenderQueueState])
 
-  const startRenderJob = useCallback(async (id: string) => {
-    const project = projectRef.current
-    if (!project) return
-    const job = renderQueueRef.current.find((entry) => entry.id === id)
-    if (!job || job.status === 'rendering') return
+    const startRenderJob = useCallback(
+      async (id: string) => {
+        const project = projectRef.current
+        if (!project) return
 
-    const controller = new AbortController()
-    renderControllersRef.current.set(id, controller)
-    updateRenderQueueState((prev) =>
-      prev.map((entry) =>
-        entry.id === id
-          ? { ...entry, status: 'rendering', progress: 0, errorMessage: undefined, result: undefined }
-          : entry,
-      ),
-    )
+        const job = renderQueueRef.current.find((entry) => entry.id === id)
+        if (!job || job.status === 'rendering') return
 
-    if (import.meta.env.DEV) {
-      console.info('[dmosh] renderJob: start', {
-        jobId: job.id,
-        projectId: (project as { id?: string }).id ?? null,
-        fileName: job.settings.fileName,
-      })
-    }
+        const controller = new AbortController()
+        renderControllersRef.current.set(id, controller)
 
-    try {
-      if (import.meta.env.DEV) {
-        console.info('[dmosh] renderJob: calling exportTimeline', {
-          jobId: job.id,
-          settings: job.settings,
-        })
-      }
+        // Reset status/progress
+        updateRenderQueueState((prev) =>
+          prev.map((entry) =>
+            entry.id === id
+              ? {
+                  ...entry,
+                  status: 'queued',
+                  progress: 0,
+                  errorMessage: undefined,
+                  result: undefined,
+                  remoteJobId: undefined,
+                }
+              : entry,
+          ),
+        )
 
-      const result = await exportTimeline(project, job.settings, {
-        signal: controller.signal,
-        onProgress: (value) => {
+        if (import.meta.env.DEV) {
+          console.info('[dmosh] renderJob: start (backend)', {
+            jobId: job.id,
+            projectId: (project as { id?: string }).id ?? null,
+            fileName: job.settings.fileName,
+          })
+        }
+
+        try {
+          // 1) Create backend export job
+          const { jobId: remoteJobId } = await postExportJob(project, job.settings)
+
+          if (import.meta.env.DEV) {
+            console.info('[dmosh] renderJob: backend job created', {
+              jobId: job.id,
+              remoteJobId,
+            })
+          }
+
           updateRenderQueueState((prev) =>
             prev.map((entry) =>
-              entry.id === id
-                ? { ...entry, progress: Math.min(100, Math.max(0, Math.round(value))) }
-                : entry,
+              entry.id === id ? { ...entry, remoteJobId, status: 'queued' } : entry,
             ),
           )
-        },
-      })
 
-      updateRenderQueueState((prev) =>
-        prev.map((entry) =>
-          entry.id === id
-            ? {
-                ...entry,
-                status: 'completed',
-                progress: 100,
-                result: {
-                  mimeType: result.mimeType,
-                  fileName: result.fileName,
-                  size: result.blob.size,
-                  blob: result.blob,
-                },
-              }
-            : entry,
-        ),
-      )
-
-      if (exportPreferences.autoDownloadOnComplete) {
-        setTimeout(() => {
-          const latestJob = renderQueueRef.current.find((entry) => entry.id === id)
-          if (latestJob && canDownloadJob(latestJob)) {
-            downloadJobResult(latestJob)
+          // Helper to stop tracking
+          const stop = () => {
+            renderControllersRef.current.delete(id)
           }
-        }, 0)
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Export failed'
 
-      if (import.meta.env.DEV) {
-        console.error('[dmosh] renderJob: FAILED', {
-          jobId: job.id,
-          projectId: (project as { id?: string }).id ?? null,
-          fileName: job.settings.fileName,
-          error: err,
-          message,
-        })
-      }
-      updateRenderQueueState((prev) =>
-        prev.map((entry) =>
-          entry.id === id ? { ...entry, status: 'error', errorMessage: message } : entry,
-        ),
-      )
-    } finally {
-      renderControllersRef.current.delete(id)
-    }
-  }, [exportPreferences.autoDownloadOnComplete, updateRenderQueueState])
+          // Handle cancellation: mark as cancelled + stop polling
+          controller.signal.addEventListener('abort', () => {
+            updateRenderQueueState((prev) =>
+              prev.map((entry) =>
+                entry.id === id ? { ...entry, status: 'cancelled' } : entry,
+              ),
+            )
+            stop()
+          })
+
+          // 2) Poll status until terminal state
+          const pollOnce = async (): Promise<boolean> => {
+            if (controller.signal.aborted) return true
+
+            try {
+              const remote = await getExportStatus(remoteJobId)
+
+              if (import.meta.env.DEV) {
+                console.info('[dmosh] renderJob: backend status', {
+                  jobId: job.id,
+                  remoteStatus: remote,
+                })
+              }
+
+              updateRenderQueueState((prev) =>
+                prev.map((entry) => {
+                  if (entry.id !== id) return entry
+
+                  let status: RenderJobStatus
+                  if (remote.status === 'queued' || remote.status === 'rendering') {
+                    status = remote.status
+                  } else if (remote.status === 'complete') {
+                    status = 'completed'
+                  } else if (remote.status === 'failed') {
+                    status = 'error'
+                  } else {
+                    status = 'cancelled'
+                  }
+
+                  const progress =
+                    typeof remote.progress === 'number'
+                      ? Math.max(0, Math.min(100, Math.round(remote.progress)))
+                      : entry.progress
+
+                  return {
+                    ...entry,
+                    status,
+                    progress,
+                    errorMessage: remote.error ?? entry.errorMessage,
+                  }
+                }),
+              )
+
+              // Terminal states: stop polling
+              if (
+                remote.status === 'complete' ||
+                remote.status === 'failed' ||
+                remote.status === 'cancelled'
+              ) {
+                if (remote.status === 'complete' && exportPreferences.autoDownloadOnComplete) {
+                  try {
+                    await downloadExport(remoteJobId)
+                  } catch (err) {
+                    if (import.meta.env.DEV) {
+                      console.error('[dmosh] renderJob: auto-download failed', err)
+                    }
+                  }
+                }
+                return true
+              }
+
+              return false
+            } catch (err) {
+              if (import.meta.env.DEV) {
+                console.error('[dmosh] renderJob: status poll failed', err)
+              }
+
+              const message =
+                err instanceof Error ? err.message : 'Export status check failed'
+
+              updateRenderQueueState((prev) =>
+                prev.map((entry) =>
+                  entry.id === id
+                    ? { ...entry, status: 'error', errorMessage: message }
+                    : entry,
+                ),
+              )
+
+              return true
+            }
+          }
+
+          // Mark as rendering for UX before first poll result
+          updateRenderQueueState((prev) =>
+            prev.map((entry) =>
+              entry.id === id ? { ...entry, status: 'rendering' } : entry,
+            ),
+          )
+
+          // Immediate first poll
+          if (await pollOnce()) {
+            stop()
+            return
+          }
+
+          // Then poll every 2 seconds
+          const intervalId = window.setInterval(async () => {
+            if (controller.signal.aborted) {
+              window.clearInterval(intervalId)
+              return
+            }
+
+            const done = await pollOnce()
+            if (done) {
+              window.clearInterval(intervalId)
+              stop()
+            }
+          }, 2000)
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : 'Export failed to start'
+
+          if (import.meta.env.DEV) {
+            console.error('[dmosh] renderJob: FAILED to start', {
+              jobId: job.id,
+              projectId: (project as { id?: string }).id ?? null,
+              fileName: job.settings.fileName,
+              error: err,
+              message,
+            })
+          }
+
+          updateRenderQueueState((prev) =>
+            prev.map((entry) =>
+              entry.id === id ? { ...entry, status: 'error', errorMessage: message } : entry,
+            ),
+          )
+          renderControllersRef.current.delete(id)
+        }
+      },
+      [exportPreferences.autoDownloadOnComplete, updateRenderQueueState],
+    )
 
   const isPreviewUrlActive = useCallback(
     (url?: string) => {

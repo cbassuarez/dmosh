@@ -2,6 +2,7 @@ import { Download, Play, RefreshCcw, Trash2 } from 'lucide-react'
 import { useMemo } from 'react'
 import { canDownloadJob, downloadJobResult } from './downloadHelpers'
 import { useProject, type RenderJobStatus } from '../shared/hooks/useProject'
+import { downloadExport } from '../shared/exportApi'
 
 const statusColors: Record<RenderJobStatus, string> = {
   queued: 'bg-slate-500/40 text-slate-200',
@@ -65,10 +66,13 @@ const RenderQueuePanel = () => {
         {sortedQueue.length === 0 && <p className="text-xs text-slate-500">No renders queued.</p>}
         <div className="space-y-3">
           {sortedQueue.map((job) => {
-            const showDownload = canDownloadJob(job)
-            const isQueued = job.status === 'queued'
-            const isError = job.status === 'error'
-            const isCompleted = job.status === 'completed'
+              const canLegacyDownload = canDownloadJob(job)
+              const canRemoteDownload = job.status === 'completed' && !!job.remoteJobId
+              const showDownload = canLegacyDownload || canRemoteDownload
+              const isQueued = job.status === 'queued'
+              const isError = job.status === 'error'
+              const isCompleted = job.status === 'completed'
+              
 
             const estimatedSizeMb =
               job.result?.size != null ? Math.max(1, Math.round(job.result.size / (1024 * 1024))) : null
@@ -114,14 +118,22 @@ const RenderQueuePanel = () => {
                       <RefreshCcw className="h-3 w-3" /> Retry
                     </button>
                   )}
-                  {showDownload && (
-                    <button
-                      onClick={() => downloadJobResult(job)}
-                      className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-black transition hover:bg-accent/80"
-                    >
-                      <Download className="h-3 w-3" /> Download
-                    </button>
-                  )}
+                    {showDownload && (
+                      <button
+                        onClick={() => {
+                          if (job.remoteJobId) {
+                            // Backend path
+                            downloadExport(job.remoteJobId)
+                          } else if (canLegacyDownload) {
+                            // Legacy/local result path (used by tests)
+                            downloadJobResult(job)
+                          }
+                        }}
+                        className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-black transition hover:bg-accent/80"
+                      >
+                        <Download className="h-3 w-3" /> Download
+                      </button>
+                    )}
                   {(isCompleted || isError || isQueued) && (
                     <button
                       onClick={() => removeRenderJob(job.id)}
