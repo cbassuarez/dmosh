@@ -1,4 +1,4 @@
-import { createFFmpeg, type FFmpeg } from '@ffmpeg/ffmpeg'
+import { FFmpeg } from '@ffmpeg/ffmpeg'
 import type { RenderSettings, AudioCodec, ContainerFormat, VideoCodec } from './renderTypes'
 import type { Project, TimelineClip } from './types'
 
@@ -36,15 +36,7 @@ const MIN_FALLBACK_DURATION_SECONDS = 1
 async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegInstance) return ffmpegInstance
 
-  const ffmpeg = createFFmpeg({
-    log: true,
-    // Let Vite bundle the core correctly and use a stable URL in both dev and GH Pages
-    corePath: new URL(
-      '@ffmpeg/core/dist/ffmpeg-core.js',
-      import.meta.url,
-    ).toString(),
-  })
-
+  const ffmpeg = new FFmpeg()
   await ffmpeg.load()
   ffmpegInstance = ffmpeg
   return ffmpeg
@@ -154,10 +146,15 @@ export async function exportTimeline(
   const durationSeconds = computeTimelineDurationSeconds(project, fps)
   const outputName = `export.${settings.fileExtension || settings.container}`
 
-  if (onProgress) {
-    ffmpeg.setProgress(({ ratio }) => {
-      onProgress(Math.min(100, Math.max(0, Math.round(ratio * 100))))
-    })
+  const progressHandler = onProgress
+    ? ({ progress }: { progress: number }) => {
+        const value = Math.max(0, Math.min(100, progress * 100))
+        onProgress(value)
+      }
+    : null
+
+  if (progressHandler) {
+    ffmpeg.on('progress', progressHandler)
   }
 
   const includeAudio = settings.includeAudio && settings.audioCodec !== 'none'
@@ -166,42 +163,54 @@ export async function exportTimeline(
   const mimeType = resolveMimeType(settings.container)
 
   try {
-    await ffmpeg.run(...args)
+    const exitCode = await ffmpeg.exec(args)
+    if (exitCode !== 0) {
+      throw new Error('Export failed')
+    }
   } catch (err) {
+    if (progressHandler) {
+      ffmpeg.off('progress', progressHandler)
+    }
     throw new Error(err instanceof Error ? err.message : 'Export failed')
+  }
+
+  if (progressHandler) {
+    ffmpeg.off('progress', progressHandler)
   }
 
   if (signal?.aborted) {
     throw new Error('Export cancelled')
   }
 
-    const data = ffmpeg.FS('readFile', outputName)
+  const data = await ffmpeg.readFile(outputName)
 
-    if (!data || data.length === 0) {
-      // This would be the *true* cause of a 0 B download
-      console.error('[dmosh] FFmpeg returned empty output', {
-        outputName,
-        container: settings.container,
-        videoCodec: settings.videoCodec,
-        width,
-        height,
-        fps,
-        durationSeconds,
-      })
-      throw new Error('FFmpeg returned empty output')
-    }
+  const fileData = typeof data === 'string' ? new TextEncoder().encode(data) : data
 
-    // Simple, avoids any subtle buffer slicing issues
-    const blob = new Blob([data], { type: mimeType })
-
-    console.info('[dmosh] Export completed', {
+  if (!fileData || fileData.length === 0) {
+    // This would be the *true* cause of a 0 B download
+    console.error('[dmosh] FFmpeg returned empty output', {
       outputName,
-      bytes: data.length,
-      blobSize: blob.size,
+      container: settings.container,
+      videoCodec: settings.videoCodec,
+      width,
+      height,
+      fps,
+      durationSeconds,
     })
+    throw new Error('FFmpeg returned empty output')
+  }
+
+  // Simple, avoids any subtle buffer slicing issues
+  const blob = new Blob([fileData], { type: mimeType })
+
+  console.info('[dmosh] Export completed', {
+    outputName,
+    bytes: fileData.length,
+    blobSize: blob.size,
+  })
 
   try {
-    ffmpeg.FS('unlink', outputName)
+    await ffmpeg.deleteFile(outputName)
   } catch {
     /* ignore cleanup errors */
   }
@@ -209,6 +218,6 @@ export async function exportTimeline(
   return {
     blob,
     mimeType,
-    fileName: `${settings.fileName}.${settings.fileExtension}`,
+    fileName: `${settings.fileName}.${settings.fileExtension ?? settings.container}`,
   }
 }

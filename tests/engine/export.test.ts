@@ -9,27 +9,25 @@ vi.mock('@ffmpeg/ffmpeg', () => {
   const fsStore: Record<string, Uint8Array> = {}
 
   return {
-    createFFmpeg: () => ({
-      load: vi.fn(async () => undefined),
-      FS: vi.fn((op: string, name: string, payload?: Uint8Array) => {
-        if (op === 'writeFile' && payload) {
-          fsStore[name] = payload
-          return
-        }
-        if (op === 'readFile') {
-          return fsStore[name] ?? mockData
-        }
-        if (op === 'unlink') {
-          delete fsStore[name]
-        }
-      }),
-      run: vi.fn(async (...args: string[]) => {
+    FFmpeg: class {
+      on = vi.fn()
+      off = vi.fn()
+
+      load = vi.fn(async () => true)
+
+      exec = vi.fn(async (args: string[]) => {
         const outputName = args[args.length - 1]
         fsStore[outputName] = mockData
-      }),
-      setProgress: vi.fn(),
-      setLogger: vi.fn(),
-    }),
+        return 0
+      })
+
+      readFile = vi.fn(async (name: string) => fsStore[name] ?? mockData)
+
+      deleteFile = vi.fn(async (name: string) => {
+        delete fsStore[name]
+        return true
+      })
+    },
   }
 })
 
