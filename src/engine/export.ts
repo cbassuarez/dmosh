@@ -199,25 +199,39 @@ export async function exportTimeline(
       }
     }
 
-  try {
-    if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: ffmpeg.run', { args })
-    }
+    try {
+      if (import.meta.env.DEV) {
+        console.info('[dmosh] exportTimeline: ffmpeg.run/exec', { args })
+      }
 
-    await ffmpeg.run(...args)
+      type FfmpegRuntime = FFmpeg & {
+        run?: (...argv: string[]) => Promise<void>
+        exec?: (argv: string[]) => Promise<void>
+      }
 
-    if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: ffmpeg.run completed')
+      const runtime = ffmpeg as unknown as FfmpegRuntime
+
+      if (typeof runtime.run === 'function') {
+        await runtime.run(...args)
+      } else if (typeof runtime.exec === 'function') {
+        // Some builds expose only `exec(args)`
+        await runtime.exec(args)
+      } else {
+        throw new Error('FFmpeg instance has neither run nor exec')
+      }
+
+      if (import.meta.env.DEV) {
+        console.info('[dmosh] exportTimeline: ffmpeg run/exec completed')
+      }
+    } catch (err) {
+      if (restoreProgress) restoreProgress()
+      if (import.meta.env.DEV) {
+        console.error('[dmosh] exportTimeline: run/exec failed', err)
+      }
+      throw new Error(err instanceof Error ? err.message : 'Export failed')
+    } finally {
+      if (restoreProgress) restoreProgress()
     }
-  } catch (err) {
-    if (restoreProgress) restoreProgress()
-    if (import.meta.env.DEV) {
-      console.error('[dmosh] exportTimeline: run failed', err)
-    }
-    throw new Error(err instanceof Error ? err.message : 'Export failed')
-  } finally {
-    if (restoreProgress) restoreProgress()
-  }
 
   if (signal?.aborted) {
     throw new Error('Export cancelled')
