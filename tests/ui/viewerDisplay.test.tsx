@@ -34,7 +34,7 @@ describe('Viewer rendering', () => {
           audioPresent: false,
           pixelFormat: 'unknown',
           durationFrames: 120,
-          previewUrl: 'blob://clip.mov',
+          previewUrl: 'https://example.com/clip.mov',
         },
       ],
       timeline: {
