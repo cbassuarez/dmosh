@@ -4,20 +4,41 @@ import type { RenderSettings } from '../../src/engine/renderTypes'
 
 // --- 1. Mock @ffmpeg/ffmpeg so we never hit the real WASM in tests ---
 
+type MockFfmpegInstance = {
+  load: () => Promise<void>
+  run: (...args: (string | string[])[]) => Promise<void>
+  exec: (...args: (string | string[])[]) => Promise<number>
+  on: (...args: unknown[]) => void
+  off: (...args: unknown[]) => void
+  readFile: (path: string) => Promise<Uint8Array>
+  FS: (op: 'readFile' | 'writeFile' | 'unlink', path: string, data?: Uint8Array) => Uint8Array | void
+  setProgress: (...args: unknown[]) => void
+}
+
 // Internal in-memory FS for the mock
 const mockFs = new Map<string, Uint8Array>()
 
 // Minimal FFmpeg mock implementing the methods used by exportTimeline
-const mockFfmpegInstance = {
+const mockFfmpegInstance: MockFfmpegInstance = {
   load: vi.fn(async () => {
     // no-op
   }),
-  run: vi.fn(async (..._args: string[]) => {
+  run: vi.fn<MockFfmpegInstance['run']>(async (...args: (string | string[])[]) => {
     // Simulate FFmpeg writing an MP4 file to the FS.
     // We don't care about real encoding; we just need non-empty bytes.
     const fakeData = new Uint8Array([1, 2, 3, 4, 5])
-    mockFs.set('out.mp4', fakeData)
+    const argList = args.length === 1 && Array.isArray(args[0]) ? (args[0] as string[]) : (args as string[])
+    const outputName = argList[argList.length - 1] ?? 'out.mp4'
+    mockFs.set(outputName, fakeData)
   }),
+  exec: vi.fn<MockFfmpegInstance['exec']>(async (...args: (string | string[])[]) => {
+    const argList = args.length === 1 && Array.isArray(args[0]) ? (args[0] as string[]) : (args as string[])
+    await mockFfmpegInstance.run(...argList)
+    return 0
+  }),
+  on: vi.fn(),
+  off: vi.fn(),
+  readFile: vi.fn(async (path: string) => mockFfmpegInstance.FS('readFile', path) as Uint8Array),
   FS: vi.fn((op: 'readFile' | 'writeFile' | 'unlink', path: string, data?: Uint8Array) => {
     if (op === 'writeFile') {
       if (!data) throw new Error('writeFile requires data')
@@ -39,20 +60,29 @@ const mockFfmpegInstance = {
 }
 
 // Mock createFFmpeg so exportTimeline uses our mock instance
-vi.mock('@ffmpeg/ffmpeg', () => ({
-  createFFmpeg: () => mockFfmpegInstance,
-  fetchFile: (input: ArrayBuffer | Uint8Array | Blob | File | string) => {
-    if (input instanceof Uint8Array) return input
-    if (typeof input === 'string') return new TextEncoder().encode(input)
-    if (input instanceof ArrayBuffer) return new Uint8Array(input)
-    if (input instanceof Blob) {
-      // Simple Blob -> Uint8Array conversion for tests
-      // This path is unlikely to be hit in this test, but keep it safe.
-      return new Uint8Array()
+vi.mock('@ffmpeg/ffmpeg', () => {
+  class FFmpeg {
+    constructor() {
+      return mockFfmpegInstance as unknown as FFmpeg
     }
-    return new Uint8Array()
-  },
-}))
+  }
+
+  return {
+    createFFmpeg: () => mockFfmpegInstance,
+    FFmpeg,
+    fetchFile: (input: ArrayBuffer | Uint8Array | Blob | File | string) => {
+      if (input instanceof Uint8Array) return input
+      if (typeof input === 'string') return new TextEncoder().encode(input)
+      if (input instanceof ArrayBuffer) return new Uint8Array(input)
+      if (input instanceof Blob) {
+        // Simple Blob -> Uint8Array conversion for tests
+        // This path is unlikely to be hit in this test, but keep it safe.
+        return new Uint8Array()
+      }
+      return new Uint8Array()
+    },
+  }
+})
 
 // Now import exportTimeline AFTER the module mock, so it picks up the mocked FFmpeg.
 import { exportTimeline } from '../../src/engine/export'
