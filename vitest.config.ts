@@ -25,7 +25,7 @@ if (typeof SharedArrayBuffer !== "undefined") {
 export default defineConfig({
   test: {
     // Default to jsdom for UI-heavy suites, while letting engine tests opt into node.
-    environment: "./tests/vitestEnvironment.ts",
+    environment: "jsdom",
     environmentMatchGlobs: [["tests/engine/**", "node"]],
 
     setupFiles: ["./tests/setupVitest.ts"],

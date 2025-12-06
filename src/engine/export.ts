@@ -145,10 +145,10 @@ export async function exportTimeline(
       console.info('[dmosh] exportTimeline: ffmpeg.run', { args })
     }
 
-    await ffmpeg.run(...args)
+    await ffmpeg.exec(args, undefined, { signal })
 
     if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: ffmpeg.run completed')
+      console.info('[dmosh] exportTimeline: ffmpeg.exec completed')
     }
   } catch (err) {
     if (progressHandler) {
