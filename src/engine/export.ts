@@ -44,7 +44,6 @@ async function getFFmpeg(): Promise<FFmpeg> {
   return ffmpeg
 }
 
-
 function resolveMimeType(container: ContainerFormat): string {
   if (container === 'mov') return 'video/quicktime'
   if (container === 'webm') return 'video/webm'
@@ -52,6 +51,10 @@ function resolveMimeType(container: ContainerFormat): string {
   return 'video/mp4'
 }
 
+/**
+ * For now, timeline export uses a lavfi color stub.
+ * This gives us a real, non-empty MP4 without implementing full timeline rendering yet.
+ */
 function buildTimelineStubArgs(settings: RenderSettings, outputName: string): string[] {
   const width = settings.width ?? 640
   const height = settings.height ?? 360
@@ -80,6 +83,7 @@ function buildTimelineStubArgs(settings: RenderSettings, outputName: string): st
     args.push('-movflags', '+faststart')
   }
 
+  // We don’t synthesize audio yet
   args.push('-an', outputName)
   return args
 }
@@ -123,45 +127,44 @@ export async function exportTimeline(
   }
 
   const outputName = `out.${settings.fileExtension || settings.container || 'mp4'}`
-
-  const progressHandler = onProgress
-    ? ({ ratio, progress }: { ratio?: number; progress?: number }) => {
-        const raw = ratio ?? progress ?? 0
-        const value = Math.max(0, Math.min(100, raw * 100))
-        onProgress(value)
-      }
-    : null
-
-  if (progressHandler) {
-    ffmpeg.on('progress', progressHandler)
-  }
-
   const args = buildTimelineStubArgs(settings, outputName)
-
   const mimeType = resolveMimeType(settings.container)
+
+  // Wire progress if the runtime supports it
+  const anyFfmpeg = ffmpeg as any
+  let restoreProgress: (() => void) | null = null
+
+  if (onProgress && typeof anyFfmpeg.setProgress === 'function') {
+    const handler = ({ ratio, progress }: { ratio?: number; progress?: number }) => {
+      const raw = ratio ?? progress ?? 0
+      const value = Math.max(0, Math.min(100, raw * 100))
+      onProgress(value)
+    }
+    anyFfmpeg.setProgress(handler)
+    restoreProgress = () => {
+      // Reset to a no-op to avoid leaking callbacks between jobs
+      anyFfmpeg.setProgress(() => {})
+    }
+  }
 
   try {
     if (import.meta.env.DEV) {
       console.info('[dmosh] exportTimeline: ffmpeg.run', { args })
     }
 
-    await ffmpeg.exec(args, undefined, { signal })
+    await ffmpeg.run(...args)
 
     if (import.meta.env.DEV) {
-      console.info('[dmosh] exportTimeline: ffmpeg.exec completed')
+      console.info('[dmosh] exportTimeline: ffmpeg.run completed')
     }
   } catch (err) {
-    if (progressHandler) {
-      ffmpeg.off('progress', progressHandler)
-    }
+    if (restoreProgress) restoreProgress()
     if (import.meta.env.DEV) {
       console.error('[dmosh] exportTimeline: run failed', err)
     }
     throw new Error(err instanceof Error ? err.message : 'Export failed')
-  }
-
-  if (progressHandler) {
-    ffmpeg.off('progress', progressHandler)
+  } finally {
+    if (restoreProgress) restoreProgress()
   }
 
   if (signal?.aborted) {
@@ -172,7 +175,7 @@ export async function exportTimeline(
     console.info('[dmosh] exportTimeline: FS readFile', { outputName })
   }
 
-  const data = ffmpeg.FS('readFile', outputName)
+  const data = ffmpeg.FS('readFile', outputName) as Uint8Array | undefined
 
   if (import.meta.env.DEV) {
     console.info('[dmosh] exportTimeline: FS readFile done', {
@@ -198,7 +201,6 @@ export async function exportTimeline(
   }
 
   const blob = new Blob([data], { type: mimeType })
-
   const fileName = `${settings.fileName}.${settings.fileExtension ?? settings.container}`
 
   if (import.meta.env.DEV) {
@@ -212,7 +214,7 @@ export async function exportTimeline(
   try {
     ffmpeg.FS('unlink', outputName)
   } catch {
-    /* ignore cleanup errors */
+    // ignore cleanup errors
   }
 
   return {
