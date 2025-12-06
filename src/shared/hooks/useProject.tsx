@@ -16,11 +16,11 @@ import {
   TimelineTrack,
 } from '../../engine/types'
 import type { RenderSettings } from '../../engine/renderTypes'
-import { exportTimeline } from '../../engine/export'
 import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerRuntimeSettings, ViewerState } from '../../editor/viewerState'
 import { MobileMode } from '../../editor/mobileTypes'
 import { canDownloadJob, downloadJobResult } from '../../editor/downloadHelpers'
+import { downloadExport, getExportStatus, postExportJob } from '../exportApi'
 
 const STORAGE_KEY = 'datamosh-current-project'
 const EXPORT_PREFS_STORAGE_KEY = 'dmosh_export_prefs'
@@ -36,7 +36,7 @@ type SelectionState = {
 
 export type PlayState = 'stopped' | 'playing' | 'paused'
 
-export type RenderJobStatus = 'queued' | 'rendering' | 'completed' | 'error' | 'cancelled'
+export type RenderJobStatus = 'queued' | 'rendering' | 'complete' | 'failed' | 'cancelled'
 
 export interface RenderJobResult {
   mimeType: string
@@ -52,6 +52,7 @@ export interface RenderJob {
   createdAt: string
   status: RenderJobStatus
   progress: number
+  remoteJobId?: string | null
   errorMessage?: string
   result?: RenderJobResult
 }
@@ -114,6 +115,7 @@ export type ProjectContextShape = {
   updateRenderJob: (id: string, patch: Partial<RenderJob>) => void
   removeRenderJob: (id: string) => void
   startRenderJob: (id: string) => Promise<void>
+  downloadRenderJob: (id: string) => Promise<void>
   error: string | null
   mobileMode: MobileMode
   setMobileMode: (mode: MobileMode) => void
@@ -147,6 +149,13 @@ const defaultViewerState: ViewerState = {
     motionVectors: false,
     glitchIntensity: false,
   },
+}
+
+const resolveMimeType = (container: RenderSettings['container']): string => {
+  if (container === 'mov') return 'video/quicktime'
+  if (container === 'webm') return 'video/webm'
+  if (container === 'mkv') return 'video/x-matroska'
+  return 'video/mp4'
 }
 
 export const loadExportPreferences = (): ExportPreferences => {
@@ -286,8 +295,8 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const projectRef = useRef<Project | null>(null)
   const renderQueueRef = useRef<RenderJob[]>([])
   const isMountedRef = useRef(true)
-  const renderControllersRef = useRef<Map<string, AbortController>>(new Map())
   const sessionPreviewUrlsRef = useRef<Set<string>>(new Set())
+  const autoDownloadedRef = useRef<Set<string>>(new Set())
 
   const save = useCallback(
     (next: Project | null) => {
@@ -343,8 +352,6 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
   useEffect(() => () => {
     isMountedRef.current = false
-    renderControllersRef.current.forEach((controller) => controller.abort())
-    renderControllersRef.current.clear()
     cleanupSourcePreviewUrls(projectRef.current, sessionPreviewUrlsRef.current)
   }, [])
 
@@ -788,7 +795,14 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     (job: Omit<RenderJob, 'status' | 'progress' | 'createdAt'>) => {
       updateRenderQueueState((prev) => [
         ...prev,
-        { ...job, status: 'queued', progress: 0, createdAt: new Date().toISOString(), result: undefined },
+        {
+          ...job,
+          status: 'queued',
+          progress: 0,
+          createdAt: new Date().toISOString(),
+          result: undefined,
+          remoteJobId: job.remoteJobId ?? null,
+        },
       ])
     },
     [updateRenderQueueState],
@@ -799,104 +813,166 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   }, [updateRenderQueueState])
 
   const removeRenderJob = useCallback((id: string) => {
-    const controller = renderControllersRef.current.get(id)
-    controller?.abort()
-    renderControllersRef.current.delete(id)
+    autoDownloadedRef.current.delete(id)
     updateRenderQueueState((prev) => prev.filter((job) => job.id !== id))
   }, [updateRenderQueueState])
 
-  const startRenderJob = useCallback(async (id: string) => {
-    const project = projectRef.current
-    if (!project) return
-    const job = renderQueueRef.current.find((entry) => entry.id === id)
-    if (!job || job.status === 'rendering') return
+  const startRenderJob = useCallback(
+    async (id: string) => {
+      const project = projectRef.current
+      if (!project) return
+      const job = renderQueueRef.current.find((entry) => entry.id === id)
+      if (!job) return
 
-    const controller = new AbortController()
-    renderControllersRef.current.set(id, controller)
-    updateRenderQueueState((prev) =>
-      prev.map((entry) =>
-        entry.id === id
-          ? { ...entry, status: 'rendering', progress: 0, errorMessage: undefined, result: undefined }
-          : entry,
-      ),
-    )
-
-    if (import.meta.env.DEV) {
-      console.info('[dmosh] renderJob: start', {
-        jobId: job.id,
-        projectId: (project as { id?: string }).id ?? null,
-        fileName: job.settings.fileName,
-      })
-    }
-
-    try {
-      if (import.meta.env.DEV) {
-        console.info('[dmosh] renderJob: calling exportTimeline', {
-          jobId: job.id,
-          settings: job.settings,
-        })
-      }
-
-      const result = await exportTimeline(project, job.settings, {
-        signal: controller.signal,
-        onProgress: (value) => {
-          updateRenderQueueState((prev) =>
-            prev.map((entry) =>
-              entry.id === id
-                ? { ...entry, progress: Math.min(100, Math.max(0, Math.round(value))) }
-                : entry,
-            ),
-          )
-        },
-      })
+      autoDownloadedRef.current.delete(id)
 
       updateRenderQueueState((prev) =>
         prev.map((entry) =>
           entry.id === id
             ? {
                 ...entry,
-                status: 'completed',
-                progress: 100,
-                result: {
-                  mimeType: result.mimeType,
-                  fileName: result.fileName,
-                  size: result.blob.size,
-                  blob: result.blob,
-                },
+                status: 'queued',
+                progress: 0,
+                errorMessage: undefined,
+                result: undefined,
+                remoteJobId: null,
               }
             : entry,
         ),
       )
 
-      if (exportPreferences.autoDownloadOnComplete) {
-        setTimeout(() => {
-          const latestJob = renderQueueRef.current.find((entry) => entry.id === id)
-          if (latestJob && canDownloadJob(latestJob)) {
-            downloadJobResult(latestJob)
-          }
-        }, 0)
+      try {
+        const { jobId } = await postExportJob(project, job.settings, project.version)
+        updateRenderQueueState((prev) =>
+          prev.map((entry) =>
+            entry.id === id ? { ...entry, remoteJobId: jobId, status: 'queued' } : entry,
+          ),
+        )
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Export failed'
+        if (import.meta.env.DEV) {
+          console.error('[dmosh] renderJob: FAILED to start remote job', {
+            jobId: job.id,
+            projectId: (project as { id?: string }).id ?? null,
+            fileName: job.settings.fileName,
+            error: err,
+            message,
+          })
+        }
+        updateRenderQueueState((prev) =>
+          prev.map((entry) =>
+            entry.id === id ? { ...entry, status: 'failed', errorMessage: message } : entry,
+          ),
+        )
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Export failed'
+    },
+    [updateRenderQueueState],
+  )
 
-      if (import.meta.env.DEV) {
-        console.error('[dmosh] renderJob: FAILED', {
-          jobId: job.id,
-          projectId: (project as { id?: string }).id ?? null,
-          fileName: job.settings.fileName,
-          error: err,
-          message,
-        })
+  const downloadRenderJob = useCallback(
+    async (id: string) => {
+      const job = renderQueueRef.current.find((entry) => entry.id === id)
+      if (!job) return
+
+      try {
+        let blob = job.result?.blob
+        if (!blob) {
+          if (!job.remoteJobId) {
+            throw new Error('Download unavailable')
+          }
+          blob = await downloadExport(job.remoteJobId)
+        }
+
+        const mimeType = resolveMimeType(job.settings.container)
+        const fileExtension = job.settings.fileExtension ?? job.settings.container ?? 'mp4'
+        const fileName = `${job.settings.fileName}.${fileExtension}`
+        const nextJob: RenderJob = {
+          ...job,
+          result: {
+            mimeType,
+            fileName,
+            size: blob.size,
+            blob,
+          },
+        }
+
+        updateRenderQueueState((prev) =>
+          prev.map((entry) => (entry.id === id ? { ...entry, result: nextJob.result } : entry)),
+        )
+
+        if (canDownloadJob(nextJob)) {
+          downloadJobResult(nextJob)
+        }
+      } catch (err) {
+        console.error(err)
+        if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+          window.alert('Download failed')
+        }
       }
-      updateRenderQueueState((prev) =>
-        prev.map((entry) =>
-          entry.id === id ? { ...entry, status: 'error', errorMessage: message } : entry,
-        ),
+    },
+    [updateRenderQueueState],
+  )
+
+  useEffect(() => {
+    if (!exportPreferences.autoDownloadOnComplete) return
+
+    renderQueue.forEach((job) => {
+      if (job.status === 'complete' && !autoDownloadedRef.current.has(job.id)) {
+        autoDownloadedRef.current.add(job.id)
+        downloadRenderJob(job.id).catch((err) => console.error('Auto-download failed', err))
+      }
+    })
+  }, [downloadRenderJob, exportPreferences.autoDownloadOnComplete, renderQueue])
+
+  useEffect(() => {
+    const activeJobs = renderQueueRef.current.filter(
+      (job) => job.remoteJobId && (job.status === 'queued' || job.status === 'rendering'),
+    )
+    if (!activeJobs.length) return
+
+    const interval = window.setInterval(() => {
+      const jobsToPoll = renderQueueRef.current.filter(
+        (job) => job.remoteJobId && (job.status === 'queued' || job.status === 'rendering'),
       )
-    } finally {
-      renderControllersRef.current.delete(id)
+
+      jobsToPoll.forEach((job) => {
+        if (!job.remoteJobId) return
+        getExportStatus(job.remoteJobId)
+          .then((info) => {
+            updateRenderQueueState((prev) =>
+              prev.map((entry) =>
+                entry.id === job.id
+                  ? {
+                      ...entry,
+                      status: info.status,
+                      progress:
+                        info.progress != null
+                          ? Math.min(100, Math.max(0, Math.round(info.progress)))
+                          : info.status === 'complete'
+                          ? 100
+                          : entry.progress,
+                      errorMessage: info.error,
+                      remoteJobId: job.remoteJobId,
+                    }
+                  : entry,
+              ),
+            )
+          })
+          .catch((err) => {
+            const message = err instanceof Error ? err.message : 'Failed to fetch export status'
+            updateRenderQueueState((prev) =>
+              prev.map((entry) =>
+                entry.id === job.id ? { ...entry, status: 'failed', errorMessage: message } : entry,
+              ),
+            )
+          })
+      })
+    }, 2000)
+
+    return () => {
+      window.clearInterval(interval)
     }
-  }, [exportPreferences.autoDownloadOnComplete, updateRenderQueueState])
+  }, [updateRenderQueueState])
 
   const isPreviewUrlActive = useCallback(
     (url?: string) => {
@@ -956,6 +1032,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       updateRenderJob,
       removeRenderJob,
       startRenderJob,
+      downloadRenderJob,
       error,
       mobileMode,
       setMobileMode: updateMobileMode,
@@ -1009,6 +1086,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       addRenderJob,
       removeRenderJob,
       startRenderJob,
+      downloadRenderJob,
       updateRenderJob,
       viewerRuntimeSettings,
       mobileMode,

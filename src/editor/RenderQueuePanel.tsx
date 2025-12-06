@@ -1,13 +1,12 @@
 import { Download, Play, RefreshCcw, Trash2 } from 'lucide-react'
-import { useMemo } from 'react'
-import { canDownloadJob, downloadJobResult } from './downloadHelpers'
+import { useMemo, useState } from 'react'
 import { useProject, type RenderJobStatus } from '../shared/hooks/useProject'
 
 const statusColors: Record<RenderJobStatus, string> = {
   queued: 'bg-slate-500/40 text-slate-200',
   rendering: 'bg-accent/20 text-accent',
-  completed: 'bg-emerald-500/20 text-emerald-300',
-  error: 'bg-rose-500/20 text-rose-200',
+  complete: 'bg-emerald-500/20 text-emerald-300',
+  failed: 'bg-rose-500/20 text-rose-200',
   cancelled: 'bg-slate-500/20 text-slate-300',
 }
 
@@ -31,8 +30,15 @@ const formatTarget = (kind: string) => {
 }
 
 const RenderQueuePanel = () => {
-  const { renderQueue, startRenderJob, removeRenderJob, exportPreferences, setExportPreferences } =
-    useProject()
+  const {
+    renderQueue,
+    startRenderJob,
+    removeRenderJob,
+    exportPreferences,
+    setExportPreferences,
+    downloadRenderJob,
+  } = useProject()
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const sortedQueue = useMemo(
     () => [...renderQueue].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [renderQueue],
@@ -65,10 +71,10 @@ const RenderQueuePanel = () => {
         {sortedQueue.length === 0 && <p className="text-xs text-slate-500">No renders queued.</p>}
         <div className="space-y-3">
           {sortedQueue.map((job) => {
-            const showDownload = canDownloadJob(job)
+            const showDownload = job.status === 'complete'
             const isQueued = job.status === 'queued'
-            const isError = job.status === 'error'
-            const isCompleted = job.status === 'completed'
+            const isError = job.status === 'failed'
+            const isCompleted = job.status === 'complete'
 
             const estimatedSizeMb =
               job.result?.size != null ? Math.max(1, Math.round(job.result.size / (1024 * 1024))) : null
@@ -92,7 +98,7 @@ const RenderQueuePanel = () => {
                   <StatusBadge status={job.status} />
                 </div>
                 <ProgressBar value={job.progress} />
-                {job.status === 'error' && job.errorMessage && (
+                {job.status === 'failed' && job.errorMessage && (
                   <div className="mt-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-200">
                     {job.errorMessage}
                   </div>
@@ -116,10 +122,18 @@ const RenderQueuePanel = () => {
                   )}
                   {showDownload && (
                     <button
-                      onClick={() => downloadJobResult(job)}
-                      className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-black transition hover:bg-accent/80"
+                      onClick={async () => {
+                        setDownloadingId(job.id)
+                        try {
+                          await downloadRenderJob(job.id)
+                        } finally {
+                          setDownloadingId((current) => (current === job.id ? null : current))
+                        }
+                      }}
+                      disabled={downloadingId === job.id}
+                      className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-black transition hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <Download className="h-3 w-3" /> Download
+                      <Download className="h-3 w-3" /> {downloadingId === job.id ? 'Downloading…' : 'Download'}
                     </button>
                   )}
                   {(isCompleted || isError || isQueued) && (

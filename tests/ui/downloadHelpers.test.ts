@@ -35,7 +35,7 @@ const createJob = (overrides: Partial<RenderJob> = {}): RenderJob => ({
   projectId: 'proj',
   settings: renderSettings,
   createdAt: new Date().toISOString(),
-  status: 'completed',
+  status: 'complete',
   progress: 100,
   ...overrides,
 })
