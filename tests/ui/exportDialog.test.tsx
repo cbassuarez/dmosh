@@ -6,6 +6,33 @@ import type { RenderSettings } from '../../src/engine/renderTypes'
 import type { Project } from '../../src/engine/types'
 import { ProjectProvider, useProject, type RenderJob } from '../../src/shared/hooks/useProject'
 
+const mockFfmpegInstance = {
+  load: vi.fn(async () => undefined),
+  run: vi.fn(async (...args: string[]) => {
+    const outputName = args[args.length - 1] ?? 'out.mp4'
+    mockFfmpegInstance.FS('writeFile', outputName, new Uint8Array([1, 2, 3]))
+  }),
+  FS: vi.fn((op: 'readFile' | 'writeFile' | 'unlink', path: string, data?: Uint8Array) => {
+    if (op === 'writeFile') {
+      if (!data) throw new Error('writeFile requires data')
+      mockFfmpegInstance.__fs.set(path, data)
+      return
+    }
+    if (op === 'readFile') {
+      return mockFfmpegInstance.__fs.get(path) ?? new Uint8Array([1])
+    }
+    if (op === 'unlink') {
+      mockFfmpegInstance.__fs.delete(path)
+    }
+  }),
+  setProgress: vi.fn(),
+  __fs: new Map<string, Uint8Array>(),
+}
+
+vi.mock('@ffmpeg/ffmpeg', () => ({
+  createFFmpeg: () => mockFfmpegInstance,
+}))
+
 const baseProject: Project = {
   version: '0.1',
   metadata: { name: 'Test', author: '', createdAt: '', updatedAt: '' },

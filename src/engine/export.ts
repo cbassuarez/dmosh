@@ -1,4 +1,4 @@
-import type { FFmpeg } from '@ffmpeg/ffmpeg'
+import { createFFmpeg, type FFmpeg } from '@ffmpeg/ffmpeg'
 import type { RenderSettings, ContainerFormat } from './renderTypes'
 import type { Project } from './types'
 
@@ -15,6 +15,18 @@ export interface ExportResult {
 
 let ffmpegInstance: FFmpeg | null = null
 
+type FfmpegWithFs = FFmpeg & {
+  FS: (op: 'readFile' | 'unlink', path: string) => Uint8Array | void
+}
+
+type ProgressEvent = { ratio?: number; progress?: number }
+
+type FfmpegWithProgress = FFmpeg & {
+  setProgress?: (handler: (progress: ProgressEvent) => void) => void
+  on?: (event: 'progress', handler: (progress: ProgressEvent) => void) => void
+  off?: (event: 'progress', handler: (progress: ProgressEvent) => void) => void
+}
+
 async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegInstance) return ffmpegInstance
 
@@ -22,57 +34,7 @@ async function getFFmpeg(): Promise<FFmpeg> {
     console.info('[dmosh] getFFmpeg: creating instance')
   }
 
-  // Dynamic import; we’ll handle multiple possible shapes
-  const mod: unknown = await import('@ffmpeg/ffmpeg')
-
-  // We’ll treat the module as `any` for construction, then cast to FFmpeg
-  const anyMod = mod as {
-    createFFmpeg?: (options?: { log?: boolean; corePath?: string }) => unknown
-    FFmpeg?: new (options?: { log?: boolean; corePath?: string }) => unknown
-    default?: unknown
-  }
-
-  let instance: unknown
-
-  // 1) Named `createFFmpeg` export: { createFFmpeg }
-  if (typeof anyMod.createFFmpeg === 'function') {
-    instance = anyMod.createFFmpeg({ log: true })
-  }
-  // 2) Named FFmpeg class: { FFmpeg } – construct directly
-  else if (typeof anyMod.FFmpeg === 'function') {
-    instance = new anyMod.FFmpeg({ log: true })
-  }
-  // 3) Default object with createFFmpeg: { default: { createFFmpeg } }
-  else if (
-    anyMod.default &&
-    typeof anyMod.default === 'object' &&
-    'createFFmpeg' in anyMod.default &&
-    typeof (anyMod.default as { createFFmpeg?: (options?: { log?: boolean }) => unknown }).createFFmpeg === 'function'
-  ) {
-    instance = (anyMod.default as { createFFmpeg: (options?: { log?: boolean }) => unknown }).createFFmpeg({ log: true })
-  }
-  // 4) Default function: { default: function } – treat as constructor/factory
-  else if (typeof anyMod.default === 'function') {
-    instance = (anyMod.default as (options?: { log?: boolean }) => unknown)({ log: true })
-  } else {
-    // If we get here, the module shape is genuinely unexpected
-    if (import.meta.env.DEV) {
-      const asObj = anyMod as Record<string, unknown>
-      const defaultVal = asObj.default as unknown
-      console.error('[dmosh] getFFmpeg: unrecognized @ffmpeg/ffmpeg module shape', {
-        keys: Object.keys(asObj),
-        defaultType: typeof defaultVal,
-        defaultKeys:
-          defaultVal && typeof defaultVal === 'object'
-            ? Object.keys(defaultVal as Record<string, unknown>)
-            : null,
-      })
-    }
-    throw new Error('Unable to construct FFmpeg instance from @ffmpeg/ffmpeg module')
-  }
-
-  // At this point `instance` should quack like an FFmpeg: has `load`, `run`, `FS`, etc.
-  const ffmpeg = instance as FFmpeg
+  const ffmpeg = createFFmpeg({ log: true })
 
   try {
     await ffmpeg.load()
@@ -136,6 +98,34 @@ function buildTimelineStubArgs(settings: RenderSettings, outputName: string): st
   return args
 }
 
+function attachProgress(ffmpeg: FFmpeg, onProgress?: (value: number) => void): () => void {
+  if (!onProgress) return () => {}
+
+  const ffmpegWithProgress = ffmpeg as FfmpegWithProgress
+
+  const handler = ({ ratio, progress }: ProgressEvent) => {
+    const raw = ratio ?? progress ?? 0
+    const value = Math.max(0, Math.min(100, raw * 100))
+    onProgress(value)
+  }
+
+  if (typeof ffmpegWithProgress.setProgress === 'function') {
+    ffmpegWithProgress.setProgress(handler)
+    return () => {
+      ffmpegWithProgress.setProgress?.(() => {})
+    }
+  }
+
+  if (typeof ffmpegWithProgress.on === 'function') {
+    ffmpegWithProgress.on('progress', handler)
+    return () => {
+      ffmpegWithProgress.off?.('progress', handler)
+    }
+  }
+
+  return () => {}
+}
+
 export async function exportTimeline(
   project: Project,
   settings: RenderSettings,
@@ -178,60 +168,26 @@ export async function exportTimeline(
   const args = buildTimelineStubArgs(settings, outputName)
   const mimeType = resolveMimeType(settings.container)
 
-    // Wire progress if the runtime supports it
-    type FFmpegWithProgress = FFmpeg & {
-      setProgress?: (handler: { ratio?: number; progress?: number }) => void
+  const restoreProgress = attachProgress(ffmpeg, onProgress)
+
+  try {
+    if (import.meta.env.DEV) {
+      console.info('[dmosh] exportTimeline: ffmpeg.run', { args })
     }
 
-    const ffmpegWithProgress = ffmpeg as FFmpegWithProgress
-    let restoreProgress: (() => void) | null = null
+    await ffmpeg.run(...args)
 
-    if (onProgress && typeof ffmpegWithProgress.setProgress === 'function') {
-      const handler = ({ ratio, progress }: { ratio?: number; progress?: number }) => {
-        const raw = ratio ?? progress ?? 0
-        const value = Math.max(0, Math.min(100, raw * 100))
-        onProgress(value)
-      }
-      ffmpegWithProgress.setProgress(handler)
-      restoreProgress = () => {
-        // Reset to a no-op to avoid leaking callbacks between jobs
-        ffmpegWithProgress.setProgress?.(() => {})
-      }
+    if (import.meta.env.DEV) {
+      console.info('[dmosh] exportTimeline: ffmpeg run completed')
     }
-
-    try {
-      if (import.meta.env.DEV) {
-        console.info('[dmosh] exportTimeline: ffmpeg.run/exec', { args })
-      }
-
-      type FfmpegRuntime = FFmpeg & {
-        run?: (...argv: string[]) => Promise<void>
-        exec?: (argv: string[]) => Promise<void>
-      }
-
-      const runtime = ffmpeg as unknown as FfmpegRuntime
-
-      if (typeof runtime.run === 'function') {
-        await runtime.run(...args)
-      } else if (typeof runtime.exec === 'function') {
-        // Some builds expose only `exec(args)`
-        await runtime.exec(args)
-      } else {
-        throw new Error('FFmpeg instance has neither run nor exec')
-      }
-
-      if (import.meta.env.DEV) {
-        console.info('[dmosh] exportTimeline: ffmpeg run/exec completed')
-      }
-    } catch (err) {
-      if (restoreProgress) restoreProgress()
-      if (import.meta.env.DEV) {
-        console.error('[dmosh] exportTimeline: run/exec failed', err)
-      }
-      throw new Error(err instanceof Error ? err.message : 'Export failed')
-    } finally {
-      if (restoreProgress) restoreProgress()
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.error('[dmosh] exportTimeline: run failed', err)
     }
+    throw new Error(err instanceof Error ? err.message : 'Export failed')
+  } finally {
+    restoreProgress()
+  }
 
   if (signal?.aborted) {
     throw new Error('Export cancelled')
@@ -241,7 +197,8 @@ export async function exportTimeline(
     console.info('[dmosh] exportTimeline: FS readFile', { outputName })
   }
 
-  const data = ffmpeg.FS('readFile', outputName) as Uint8Array | undefined
+  const ffmpegWithFs = ffmpeg as FfmpegWithFs
+  const data = ffmpegWithFs.FS('readFile', outputName) as Uint8Array | undefined
 
   if (import.meta.env.DEV) {
     console.info('[dmosh] exportTimeline: FS readFile done', {
@@ -278,7 +235,7 @@ export async function exportTimeline(
   }
 
   try {
-    ffmpeg.FS('unlink', outputName)
+    ffmpegWithFs.FS('unlink', outputName)
   } catch {
     // ignore cleanup errors
   }
