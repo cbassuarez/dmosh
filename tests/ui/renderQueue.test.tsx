@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import '@testing-library/jest-dom/vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import RenderQueuePanel from '../../src/editor/RenderQueuePanel'
 import type { RenderSettings } from '../../src/engine/renderTypes'
@@ -20,13 +20,12 @@ vi.mock('../../src/editor/downloadHelpers', async () => {
   )
   return {
     ...actual,
-    downloadJobResult: (...args: Parameters<typeof actual.downloadJobResult>) =>
-      downloadJobResultMock(...args),
+    downloadJobResult: (...args: unknown[]) => downloadJobResultMock(...args),
   }
 })
 
 vi.mock('../../src/engine/export', () => ({
-  exportTimeline: (...args: Parameters<typeof exportTimelineMock>) => exportTimelineMock(...args),
+  exportTimeline: (...args: unknown[]) => exportTimelineMock(...args),
 }))
 
 const project: Project = {
@@ -35,9 +34,21 @@ const project: Project = {
   seed: 2,
   settings: { width: 1280, height: 720, fps: 30, blockSize: 16 },
   sources: [],
-  timeline: { fps: 30, width: 1280, height: 720, tracks: [{ id: 't1', kind: 'video', name: 'Video 1', index: 0 }], clips: [] },
+  timeline: {
+    fps: 30,
+    width: 1280,
+    height: 720,
+    tracks: [{ id: 't1', kind: 'video', name: 'Video 1', index: 0 }],
+    clips: [],
+  },
   masks: [],
-  operations: { dropKeyframes: [], freezeReference: [], redirectFrames: [], holdSmear: [], motionVectorTransforms: [] },
+  operations: {
+    dropKeyframes: [],
+    freezeReference: [],
+    redirectFrames: [],
+    holdSmear: [],
+    motionVectorTransforms: [],
+  },
   automationCurves: [],
 }
 
@@ -89,15 +100,24 @@ describe('RenderQueuePanel', () => {
       </ProjectProvider>,
     )
 
-    expect(await screen.findByText('queued-test')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('Start'))
+    // Find the job row/card by its file name
+    const jobTitle = await screen.findByText('queued-test')
+    const jobCard = jobTitle.closest('div') as HTMLElement
+    expect(jobCard).toBeInTheDocument()
 
+    // Click the Start button inside this card (not any other "Start" in the UI)
+    const startButton = within(jobCard).getByRole('button', { name: 'Start' })
+    fireEvent.click(startButton)
+
+    // Wait until this job's status shows "completed"
     await waitFor(() => {
-      expect(screen.getByText(/completed/i)).toBeInTheDocument()
+      expect(within(jobCard).getByText(/completed/i)).toBeInTheDocument()
     })
 
-    const downloadButton = await screen.findByText('Download')
+    // Find and click the Download button for this job
+    const downloadButton = within(jobCard).getByRole('button', { name: 'Download' })
     fireEvent.click(downloadButton)
-    expect(downloadJobResultMock).toHaveBeenCalled()
+
+    expect(downloadJobResultMock).toHaveBeenCalledTimes(1)
   })
 })
