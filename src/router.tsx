@@ -8,6 +8,7 @@ import DocsPage from './pages/DocsPage'
 import CliPage from './pages/CliPage'
 import ExamplesPage from './pages/ExamplesPage'
 import ChangelogPage from './pages/ChangelogPage'
+import LicensesPage from './pages/LicensesPage'
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -46,6 +47,16 @@ const AnimatedRoutes = () => {
             <RootLayout>
               <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
                 <AboutPage />
+              </motion.div>
+            </RootLayout>
+          }
+        />
+        <Route
+          path="/licenses"
+          element={
+            <RootLayout>
+              <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
+                <LicensesPage />
               </motion.div>
             </RootLayout>
           }
