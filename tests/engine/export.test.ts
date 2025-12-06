@@ -73,26 +73,24 @@ setProgress: vi.fn(),
 
 // Mock createFFmpeg so exportTimeline uses our mock instance
 vi.mock('@ffmpeg/ffmpeg', () => {
-class FFmpeg {
-constructor() {
-return mockFfmpegInstance as unknown as FFmpeg
-}
-}
+  const module = {
+    createFFmpeg: () => mockFfmpegInstance,
+    FFmpeg: class {},
+    fetchFile: (input: ArrayBuffer | Uint8Array | Blob | File | string) => {
+      if (input instanceof Uint8Array) return input
+      if (typeof input === 'string') return new TextEncoder().encode(input)
+      if (input instanceof ArrayBuffer) return new Uint8Array(input)
+      if (input instanceof Blob) {
+        return new Uint8Array()
+      }
+      return new Uint8Array()
+    },
+  }
 
-return {
-createFFmpeg: () => mockFfmpegInstance,
-FFmpeg,
-fetchFile: (input: ArrayBuffer | Uint8Array | Blob | File | string) => {
-if (input instanceof Uint8Array) return input
-if (typeof input === 'string') return new TextEncoder().encode(input)
-if (input instanceof ArrayBuffer) return new Uint8Array(input)
-if (input instanceof Blob) {
-// Simple Blob -> Uint8Array conversion for tests
-return new Uint8Array()
-}
-return new Uint8Array()
-},
-}
+  return {
+    ...module,
+    default: module,
+  }
 })
 
 // Now import exportTimeline AFTER the module mock, so it picks up the mocked FFmpeg.

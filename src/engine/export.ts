@@ -1,4 +1,4 @@
-import { createFFmpeg, type FFmpeg } from '@ffmpeg/ffmpeg'
+import type { FFmpeg } from '@ffmpeg/ffmpeg'
 import type { RenderSettings, ContainerFormat } from './renderTypes'
 import type { Project } from './types'
 
@@ -21,6 +21,9 @@ async function getFFmpeg(): Promise<FFmpeg> {
   if (import.meta.env.DEV) {
     console.info('[dmosh] getFFmpeg: creating instance')
   }
+
+  // Dynamic import to avoid Rollup export-shape issues
+  const { createFFmpeg } = await import('@ffmpeg/ffmpeg')
 
   const ffmpeg = createFFmpeg({
     log: true,
