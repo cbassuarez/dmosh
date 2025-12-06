@@ -36,9 +36,27 @@ const MIN_FALLBACK_DURATION_SECONDS = 1
 async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegInstance) return ffmpegInstance
 
+  if (import.meta.env.DEV) {
+    console.info('[dmosh] getFFmpeg: creating instance')
+  }
+
   const ffmpeg = new FFmpeg()
-  await ffmpeg.load()
+
+  try {
+    await ffmpeg.load()
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.error('[dmosh] getFFmpeg: load failed', err)
+    }
+    throw err
+  }
+
   ffmpegInstance = ffmpeg
+
+  if (import.meta.env.DEV) {
+    console.info('[dmosh] getFFmpeg: load completed')
+  }
+
   return ffmpeg
 }
 
@@ -131,6 +149,20 @@ export async function exportTimeline(
 ): Promise<ExportResult> {
   const { onProgress, signal } = handlers
 
+  if (import.meta.env.DEV) {
+    console.info('[dmosh] exportTimeline: start', {
+      projectId: (project as { id?: string }).id ?? null,
+      source: settings.source,
+      container: settings.container,
+      videoCodec: settings.videoCodec,
+      audioCodec: settings.audioCodec,
+      width: settings.width,
+      height: settings.height,
+      fpsMode: settings.fpsMode,
+      fps: settings.fps,
+    })
+  }
+
   if (settings.container === 'mp4' && settings.videoCodec === 'prores_422') {
     throw new Error('ProRes is not supported in MP4 container')
   }
@@ -140,6 +172,10 @@ export async function exportTimeline(
   }
 
   const ffmpeg = await getFFmpeg()
+
+  if (import.meta.env.DEV) {
+    console.info('[dmosh] exportTimeline: ffmpeg instance loaded')
+  }
 
   const { width, height } = resolveDimensions(project, settings)
   const fps = resolveFps(project, settings)
@@ -163,13 +199,24 @@ export async function exportTimeline(
   const mimeType = resolveMimeType(settings.container)
 
   try {
+    if (import.meta.env.DEV) {
+      console.info('[dmosh] exportTimeline: run', { args })
+    }
+
     const exitCode = await ffmpeg.exec(args)
+
+    if (import.meta.env.DEV) {
+      console.info('[dmosh] exportTimeline: run completed')
+    }
     if (exitCode !== 0) {
       throw new Error('Export failed')
     }
   } catch (err) {
     if (progressHandler) {
       ffmpeg.off('progress', progressHandler)
+    }
+    if (import.meta.env.DEV) {
+      console.error('[dmosh] exportTimeline: run failed', err)
     }
     throw new Error(err instanceof Error ? err.message : 'Export failed')
   }
@@ -182,32 +229,49 @@ export async function exportTimeline(
     throw new Error('Export cancelled')
   }
 
+  if (import.meta.env.DEV) {
+    console.info('[dmosh] exportTimeline: readFile', { outputName })
+  }
+
   const data = await ffmpeg.readFile(outputName)
+
+  if (import.meta.env.DEV) {
+    console.info('[dmosh] exportTimeline: readFile done', {
+      outputName,
+      length: data?.length ?? 0,
+    })
+  }
 
   const fileData = typeof data === 'string' ? new TextEncoder().encode(data) : data
 
   if (!fileData || fileData.length === 0) {
-    // This would be the *true* cause of a 0 B download
-    console.error('[dmosh] FFmpeg returned empty output', {
-      outputName,
-      container: settings.container,
-      videoCodec: settings.videoCodec,
-      width,
-      height,
-      fps,
-      durationSeconds,
-    })
-    throw new Error('FFmpeg returned empty output')
+    const msg = `FFmpeg returned empty output for ${outputName}`
+    if (import.meta.env.DEV) {
+      console.error('[dmosh] exportTimeline: empty output', {
+        outputName,
+        container: settings.container,
+        videoCodec: settings.videoCodec,
+        width,
+        height,
+        fps,
+        durationSeconds,
+      })
+    }
+    throw new Error(msg)
   }
 
   // Simple, avoids any subtle buffer slicing issues
   const blob = new Blob([fileData], { type: mimeType })
 
-  console.info('[dmosh] Export completed', {
-    outputName,
-    bytes: fileData.length,
-    blobSize: blob.size,
-  })
+  const fileName = `${settings.fileName}.${settings.fileExtension ?? settings.container}`
+
+  if (import.meta.env.DEV) {
+    console.info('[dmosh] exportTimeline: success', {
+      fileName,
+      mimeType,
+      blobSize: blob.size,
+    })
+  }
 
   try {
     await ffmpeg.deleteFile(outputName)
@@ -218,6 +282,6 @@ export async function exportTimeline(
   return {
     blob,
     mimeType,
-    fileName: `${settings.fileName}.${settings.fileExtension ?? settings.container}`,
+    fileName,
   }
 }
