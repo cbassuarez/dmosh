@@ -118,22 +118,22 @@ const RenderQueuePanel = () => {
                       <RefreshCcw className="h-3 w-3" /> Retry
                     </button>
                   )}
-                    {showDownload && (
-                      <button
-                        onClick={() => {
-                          if (job.remoteJobId) {
-                            // Backend path
-                            downloadExport(job.remoteJobId)
-                          } else if (canLegacyDownload) {
-                            // Legacy/local result path (used by tests)
-                            downloadJobResult(job)
-                          }
-                        }}
-                        className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-black transition hover:bg-accent/80"
-                      >
-                        <Download className="h-3 w-3" /> Download
-                      </button>
-                    )}
+                  {showDownload && (
+                    <button
+                      onClick={() => {
+                        if (job.remoteJobId) {
+                          // Backend path
+                          downloadExport(job.remoteJobId)
+                        } else if (canLegacyDownload) {
+                          // Legacy/local result path (used by tests)
+                          downloadJobResult(job)
+                        }
+                      }}
+                      className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-black transition hover:bg-accent/80"
+                    >
+                      <Download className="h-3 w-3" aria-hidden="true" /> Download
+                    </button>
+                  )}
                   {(isCompleted || isError || isQueued) && (
                     <button
                       onClick={() => removeRenderJob(job.id)}
