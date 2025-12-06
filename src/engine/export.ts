@@ -130,22 +130,26 @@ export async function exportTimeline(
   const args = buildTimelineStubArgs(settings, outputName)
   const mimeType = resolveMimeType(settings.container)
 
-  // Wire progress if the runtime supports it
-  const anyFfmpeg = ffmpeg as any
-  let restoreProgress: (() => void) | null = null
+    // Wire progress if the runtime supports it
+    type FFmpegWithProgress = FFmpeg & {
+      setProgress?: (handler: { ratio?: number; progress?: number }) => void
+    }
 
-  if (onProgress && typeof anyFfmpeg.setProgress === 'function') {
-    const handler = ({ ratio, progress }: { ratio?: number; progress?: number }) => {
-      const raw = ratio ?? progress ?? 0
-      const value = Math.max(0, Math.min(100, raw * 100))
-      onProgress(value)
+    const ffmpegWithProgress = ffmpeg as FFmpegWithProgress
+    let restoreProgress: (() => void) | null = null
+
+    if (onProgress && typeof ffmpegWithProgress.setProgress === 'function') {
+      const handler = ({ ratio, progress }: { ratio?: number; progress?: number }) => {
+        const raw = ratio ?? progress ?? 0
+        const value = Math.max(0, Math.min(100, raw * 100))
+        onProgress(value)
+      }
+      ffmpegWithProgress.setProgress(handler)
+      restoreProgress = () => {
+        // Reset to a no-op to avoid leaking callbacks between jobs
+        ffmpegWithProgress.setProgress?.(() => {})
+      }
     }
-    anyFfmpeg.setProgress(handler)
-    restoreProgress = () => {
-      // Reset to a no-op to avoid leaking callbacks between jobs
-      anyFfmpeg.setProgress(() => {})
-    }
-  }
 
   try {
     if (import.meta.env.DEV) {
