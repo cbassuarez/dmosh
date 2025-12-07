@@ -2,17 +2,17 @@ import type { Project, Source } from '../engine/types'
 import type { RenderSettings } from '../engine/renderTypes'
 import { getExportServiceConfig, uploadSourceMedia } from './exportApi'
 
-const createFileFromSourcePreview = async (source: Source): Promise<File | null> => {
-  if (!source.previewUrl || !source.previewUrl.startsWith('blob:')) return null
+const createFileFromSourcePreview = async (source: Source): Promise<File | undefined> => {
+  if (!source.previewUrl || !source.previewUrl.startsWith('blob:')) return undefined
 
   try {
     const res = await fetch(source.previewUrl)
-    if (!res.ok) return null
+    if (!res.ok) return undefined
     const blob = await res.blob()
     const fileName = source.originalName || source.id
     return new File([blob], fileName, { type: blob.type || 'application/octet-stream' })
   } catch {
-    return null
+    return undefined
   }
 }
 
