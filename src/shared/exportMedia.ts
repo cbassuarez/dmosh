@@ -2,6 +2,20 @@ import type { Project, Source } from '../engine/types'
 import type { RenderSettings } from '../engine/renderTypes'
 import { getExportServiceConfig, uploadSourceMedia } from './exportApi'
 
+const createFileFromSourcePreview = async (source: Source): Promise<File | null> => {
+  if (!source.previewUrl || !source.previewUrl.startsWith('blob:')) return null
+
+  try {
+    const res = await fetch(source.previewUrl)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    const fileName = source.originalName || source.id
+    return new File([blob], fileName, { type: blob.type || 'application/octet-stream' })
+  } catch {
+    return null
+  }
+}
+
 const collectSourceIdsForSettings = (project: Project, settings: RenderSettings): Set<string> => {
   const sourceRef = settings.source ?? { kind: 'timeline' as const }
   const sourceIds = new Set<string>()
@@ -42,7 +56,14 @@ export const ensureSourcesUploaded = async (options: {
   for (const source of requiredSources) {
     if (source.serverUploaded) continue
 
-    const file = getSourceFile(source.id)
+    // 1) Try the in-memory File first
+    let file = getSourceFile(source.id)
+
+    // 2) Fall back to reconstructing from the preview blob if needed
+    if (!file) {
+      file = await createFileFromSourcePreview(source)
+    }
+
     if (!file) {
       throw Object.assign(
         new Error(
