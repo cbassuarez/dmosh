@@ -101,14 +101,15 @@ const MoshView = () => {
     () => currentMoshScope ?? { kind: 'timeline', timelineId },
     [currentMoshScope, timelineId],
   )
-  const scopeKey = useMemo(() => moshScopeKey(activeScope), [activeScope])
+    const scopeKey = useMemo(() => moshScopeKey(activeScope), [activeScope])
+    useEffect(() => setSelectedNodeId(null), [scopeKey])
 
-  useEffect(() => setSelectedNodeId(null), [scopeKey])
+    // Always compute the latest graph for the current scope so UI stays in sync
+    // with mosh graph updates (no memoization here).
+    const graph: MoshGraph = project
+      ? getMoshGraphForScope(activeScope)
+      : createEmptyMoshGraph(activeScope)
 
-  const graph: MoshGraph = useMemo(
-    () => (project ? getMoshGraphForScope(activeScope) : createEmptyMoshGraph(activeScope)),
-    [activeScope, getMoshGraphForScope, project],
-  )
 
   useEffect(() => {
     if (!project) return
@@ -123,22 +124,23 @@ const MoshView = () => {
   if (!project) return null
 
       const handleAddNode = (op: MoshOperationType) => {
-          // "add-or-select" per scope + operation type.
-          // If a node with this op already exists in the active scope's graph,
-          // just select it instead of creating a duplicate.
-          const existing = graph.nodes.find((node) => node.op === op)
-          if (existing) {
-            setSelectedNodeId(existing.id)
-            return
-          }
-      
-          const node = createDefaultNode(op)
-          updateMoshGraph(activeScope, (prev) => ({
-            ...prev,
-            nodes: [...prev.nodes, node],
-          }))
-          setSelectedNodeId(node.id)
+        // per-scope "add-or-select" semantics.
+        // If a node with this operation already exists in the active scope,
+        // just select it instead of creating a duplicate.
+        const existing = graph.nodes.find((node) => node.op === op)
+        if (existing) {
+          setSelectedNodeId(existing.id)
+          return
         }
+
+        const node = createDefaultNode(op)
+        updateMoshGraph(activeScope, (prev) => ({
+          ...prev,
+          nodes: [...prev.nodes, node],
+        }))
+        setSelectedNodeId(node.id)
+      }
+
 
   const handleUpdateNode = (nodeId: string, updater: (node: MoshNode) => MoshNode) => {
     updateMoshGraph(activeScope, (prev) => ({
