@@ -27,6 +27,11 @@ export interface RemoteExportJob {
   progress?: number | null
   error?: string
   downloadUrl?: string | null
+  debug?: Array<{
+    ts: string
+    label: string
+    payload: unknown
+  }>
 }
 
 export const getExportServiceConfig = () => {
