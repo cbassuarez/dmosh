@@ -182,10 +182,14 @@ const humanizeExportError = (error: string | null | undefined): string | null =>
       return 'The renderer hit a processing error. Try again with a shorter segment or lower resolution.'
     case 'over_capacity':
       return 'The render queue is currently full. Please wait a bit and try again.'
+    case 'job_too_large':
+      return 'This export is too large for the current service limits (resolution or duration). Try a smaller resolution or shorter segment.'
     default:
-      return 'Export failed due to an unknown error.'
+      // ⬅️ Instead of masking the error, show it directly.
+      return error
   }
 }
+
 
 let untitledCounter = 1
 
@@ -1058,19 +1062,21 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
         try {
           const remote = await getExportStatus(activeRemoteJobId)
-          if (import.meta.env.DEV && Array.isArray(remote.debug) && remote.debug.length > 0) {
-            for (const entry of remote.debug) {
-              console.log('[dmosh export debug]', entry.ts, entry.label, entry.payload)
+            if (Array.isArray(remote.debug) && remote.debug.length > 0) {
+              for (const entry of remote.debug) {
+                // eslint-disable-next-line no-console
+                console.log('[dmosh export debug]', entry.ts, entry.label, entry.payload)
+              }
             }
-          }
-          if (import.meta.env.DEV) {
+
+            // eslint-disable-next-line no-console
             console.log('[dmosh] remote export status', {
               id: activeRemoteJobId,
               status: remote.status,
               error: remote.error,
               progress: remote.progress,
             })
-          }
+
           updateRenderQueueState((prev) =>
             prev.map((entry) => {
               if (entry.id !== id) return entry
@@ -1105,12 +1111,16 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
                 typeof remote.progress === 'number'
                   ? Math.max(0, Math.min(100, Math.round(remote.progress)))
                   : entry.progress
+              const friendlyError = humanizeExportError(remote.error)
 
               return {
                 ...entry,
                 status,
                 progress,
-                errorMessage: humanizeExportError(remote.error) ?? entry.errorMessage,
+              errorMessage:
+                friendlyError ??
+                remote.error ??
+                entry.errorMessage,
                 remoteJobId: activeRemoteJobId,
               }
             }),
