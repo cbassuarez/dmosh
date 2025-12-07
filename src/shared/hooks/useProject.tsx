@@ -16,6 +16,7 @@ import {
   TimelineTrack,
 } from '../../engine/types'
 import { postExportJob, getExportStatus, downloadExport } from '../exportApi'
+import { ensureSourcesUploaded } from '../exportMedia'
 import type { RenderSettings } from '../../engine/renderTypes'
 import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerRuntimeSettings, ViewerState } from '../../editor/viewerState'
@@ -78,6 +79,8 @@ export type ProjectContextShape = {
   loadProjectFromFile: (file: File) => Promise<void>
   exportProject: () => void
   importSources: (files: File[]) => Promise<void>
+  getSourceFile: (sourceId: string) => File | undefined
+  updateSource: (sourceId: string, patch: Partial<Source>) => void
   addTrack: () => void
   removeTrack: (trackId: string) => void
   reorderTrack: (sourceId: string, targetId: string) => void
@@ -164,6 +167,23 @@ export const loadExportPreferences = (): ExportPreferences => {
     return { autoDownloadOnComplete: !!parsed.autoDownloadOnComplete }
   } catch {
     return { autoDownloadOnComplete: false }
+  }
+}
+
+const humanizeExportError = (error: string | null | undefined): string | null => {
+  if (!error) return null
+
+  switch (error) {
+    case 'media_missing':
+      return 'The backend could not find the source media for this export. Try re-importing your clips and exporting again.'
+    case 'unsupported_timeline':
+      return 'This timeline layout is not supported yet. Try simplifying your tracks or exporting a region.'
+    case 'ffmpeg_error':
+      return 'The renderer hit a processing error. Try again with a shorter segment or lower resolution.'
+    case 'over_capacity':
+      return 'The render queue is currently full. Please wait a bit and try again.'
+    default:
+      return 'Export failed due to an unknown error.'
   }
 }
 
@@ -293,6 +313,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const renderControllersRef = useRef<Map<string, AbortController>>(new Map())
   const renderJobPollersRef = useRef<Map<string, number>>(new Map())
   const sessionPreviewUrlsRef = useRef<Set<string>>(new Set())
+  const sourceFileMapRef = useRef<Map<string, File>>(new Map())
 
   const save = useCallback(
     (next: Project | null) => {
@@ -384,6 +405,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const newProject = useCallback(() => {
     setError(null)
     cleanupSourcePreviewUrls(project, sessionPreviewUrlsRef.current)
+    sourceFileMapRef.current.clear()
     save(createEmptyProject())
   }, [project, save])
 
@@ -397,6 +419,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
         }
         setError(null)
         cleanupSourcePreviewUrls(project, sessionPreviewUrlsRef.current)
+        sourceFileMapRef.current.clear()
         save(stripTransientSourceUrls(parsed))
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to parse project file'
@@ -468,6 +491,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
         }
         const hash = await computeHash(file)
         const id = `src-${project.sources.length + newSources.length + 1}`
+        sourceFileMapRef.current.set(id, file)
         newSources.push({
           id,
           originalName: file.name,
@@ -783,6 +807,25 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     })
   }, [])
 
+  const getSourceFile = useCallback((sourceId: string) => sourceFileMapRef.current.get(sourceId), [])
+
+  const updateSource = useCallback(
+    (sourceId: string, patch: Partial<Source>) => {
+      const current = projectRef.current
+      if (!current) return
+
+      const nextProject = {
+        ...current,
+        sources: current.sources.map((source) =>
+          source.id === sourceId ? { ...source, ...patch } : source,
+        ),
+      }
+
+      save(nextProject)
+    },
+    [save],
+  )
+
   const updateMobileMode = useCallback((mode: MobileMode) => {
     setMobileMode(mode)
   }, [])
@@ -857,6 +900,21 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     updateRenderQueueState((prev) => prev.filter((job) => job.id !== id))
   }, [stopJobPoller, updateRenderQueueState])
 
+  const humanizeStartError = useCallback((err: unknown): string => {
+    const code = typeof (err as { code?: string })?.code === 'string' ? (err as { code?: string }).code : null
+    if (code === 'source_file_missing') {
+      return 'Original media file is missing for this export. Please re-import the source and try again.'
+    }
+    if (code === 'hash_mismatch') {
+      return 'Upload failed due to a content mismatch. Please re-import the file.'
+    }
+    if (code === 'upload_failed') {
+      return 'Upload failed. Please try again.'
+    }
+
+    return err instanceof Error ? err.message : 'Export failed to start'
+  }, [])
+
   const startRenderJob = useCallback(
     async (id: string) => {
       const project = projectRef.current
@@ -897,60 +955,66 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     const statusIsTerminal = job.status === 'error' || job.status === 'cancelled'
 
     if (!remoteJobId || statusIsTerminal) {
+      updateRenderQueueState((prev) =>
+        prev.map((entry) =>
+          entry.id === id
+            ? {
+                ...entry,
+                status: 'queued',
+                progress: 0,
+                errorMessage: undefined,
+                result: undefined,
+                remoteJobId: undefined,
+                hasAutoDownloaded: false,
+              }
+            : entry,
+        ),
+      )
+
+      try {
+        await ensureSourcesUploaded({
+          project,
+          settings: job.settings,
+          getSourceFile,
+          updateSource,
+        })
+        const response = await postExportJob(project, job.settings)
+        remoteJobId = response.jobId
+
         updateRenderQueueState((prev) =>
           prev.map((entry) =>
             entry.id === id
               ? {
                   ...entry,
+                  remoteJobId,
                   status: 'queued',
-                  progress: 0,
-                  errorMessage: undefined,
-                  result: undefined,
-                  remoteJobId: undefined,
                   hasAutoDownloaded: false,
                 }
               : entry,
           ),
         )
+      } catch (err) {
+        const message = humanizeStartError(err)
 
-        try {
-          const response = await postExportJob(project, job.settings)
-          remoteJobId = response.jobId
-
-          updateRenderQueueState((prev) =>
-            prev.map((entry) =>
-              entry.id === id
-                ? {
-                    ...entry,
-                    remoteJobId,
-                    status: 'queued',
-                    hasAutoDownloaded: false,
-                  }
-                : entry,
-            ),
-          )
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Export failed to start'
-
-          if (import.meta.env.DEV) {
-            console.error('[dmosh] renderJob: FAILED to start', {
-              jobId: job.id,
-              projectId: (project as { id?: string }).id ?? null,
-              fileName: job.settings.fileName,
-              error: err,
-              message,
-            })
-          }
-
-          updateRenderQueueState((prev) =>
-            prev.map((entry) =>
-              entry.id === id ? { ...entry, status: 'error', errorMessage: message } : entry,
-            ),
-          )
-          stop()
-          return
+        if (import.meta.env.DEV) {
+          console.error('[dmosh] renderJob: FAILED to start', {
+            jobId: job.id,
+            projectId: (project as { id?: string }).id ?? null,
+            fileName: job.settings.fileName,
+            error: err,
+            message,
+          })
         }
+
+        updateRenderQueueState((prev) =>
+          prev.map((entry) =>
+            entry.id === id ? { ...entry, status: 'error', errorMessage: message } : entry,
+          ),
+        )
+        stop()
+        return
       }
+    }
 
     if (!remoteJobId) {
       updateRenderQueueState((prev) =>
@@ -1015,7 +1079,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
                 ...entry,
                 status,
                 progress,
-                errorMessage: remote.error ?? entry.errorMessage,
+                errorMessage: humanizeExportError(remote.error) ?? entry.errorMessage,
                 remoteJobId: activeRemoteJobId,
               }
             }),
@@ -1080,7 +1144,15 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
       startJobPoller(id, pollOnce)
     },
-    [exportPreferences.autoDownloadOnComplete, startJobPoller, stopJobPoller, updateRenderQueueState],
+    [
+      exportPreferences.autoDownloadOnComplete,
+      startJobPoller,
+      stopJobPoller,
+      updateRenderQueueState,
+      getSourceFile,
+      updateSource,
+      humanizeStartError,
+    ],
   )
 
 
@@ -1106,6 +1178,8 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       loadProjectFromFile,
       exportProject,
       importSources,
+      getSourceFile,
+      updateSource,
       addTrack,
       removeTrack,
       reorderTrack,
@@ -1191,6 +1265,8 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       setViewerRuntimeSettings,
       exportPreferences,
       setExportPreferences,
+      getSourceFile,
+      updateSource,
       renderQueue,
       addRenderJob,
       removeRenderJob,

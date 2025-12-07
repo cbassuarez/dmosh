@@ -29,19 +29,25 @@ export interface RemoteExportJob {
   downloadUrl?: string | null
 }
 
-export async function postExportJob(
-  project: Project,
-  settings: RenderSettings,
-): Promise<{ jobId: string }> {
+export const getExportServiceConfig = () => {
   if (!API_BASE || !AUTH_TOKEN) {
     throw new Error('Export backend is not configured')
   }
 
-  const res = await fetch(`${API_BASE}/exports`, {
+  return { baseUrl: API_BASE, authToken: AUTH_TOKEN }
+}
+
+export async function postExportJob(
+  project: Project,
+  settings: RenderSettings,
+): Promise<{ jobId: string }> {
+  const { baseUrl, authToken } = getExportServiceConfig()
+
+  const res = await fetch(`${baseUrl}/exports`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Export-Token': AUTH_TOKEN,
+      'X-Export-Token': authToken,
     },
     body: JSON.stringify({
       project,
@@ -62,13 +68,11 @@ export async function postExportJob(
 }
 
 export async function getExportStatus(jobId: string): Promise<RemoteExportJob> {
-  if (!API_BASE || !AUTH_TOKEN) {
-    throw new Error('Export backend is not configured')
-  }
+  const { baseUrl, authToken } = getExportServiceConfig()
 
-  const res = await fetch(`${API_BASE}/exports/${encodeURIComponent(jobId)}`, {
+  const res = await fetch(`${baseUrl}/exports/${encodeURIComponent(jobId)}`, {
     headers: {
-      'X-Export-Token': AUTH_TOKEN,
+      'X-Export-Token': authToken,
     },
   })
 
@@ -84,15 +88,13 @@ export async function getExportStatus(jobId: string): Promise<RemoteExportJob> {
 }
 
 export async function downloadExport(jobId: string): Promise<void> {
-  if (!API_BASE || !AUTH_TOKEN) {
-    throw new Error('Export backend is not configured')
-  }
+  const { baseUrl, authToken } = getExportServiceConfig()
 
   const res = await fetch(
-    `${API_BASE}/exports/${encodeURIComponent(jobId)}/download`,
+    `${baseUrl}/exports/${encodeURIComponent(jobId)}/download`,
     {
       headers: {
-        'X-Export-Token': AUTH_TOKEN,
+        'X-Export-Token': authToken,
       },
     },
   )
@@ -118,5 +120,62 @@ export async function downloadExport(jobId: string): Promise<void> {
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+}
+
+export async function uploadSourceMedia(params: {
+  baseUrl: string
+  authToken: string
+  file: File
+  hash: string
+  originalName: string
+}): Promise<{ hash: string; cached: boolean; serverExt: string | null }> {
+  const url = new URL('/media/upload', params.baseUrl).toString()
+
+  const formData = new FormData()
+  formData.append('file', params.file)
+  formData.append('hash', params.hash)
+  formData.append('originalName', params.originalName)
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'X-Export-Token': params.authToken,
+    },
+    body: formData,
+  })
+
+  const parseServerExt = (path?: string | null): string | null => {
+    if (!path || typeof path !== 'string') return null
+    const lastDot = path.lastIndexOf('.')
+    if (lastDot === -1) return null
+    const ext = path.slice(lastDot)
+    return ext || null
+  }
+
+  if (res.ok) {
+    const json = (await res.json().catch(() => ({}))) as {
+      hash?: string
+      cached?: boolean
+      path?: string
+    }
+    return {
+      hash: json.hash ?? params.hash,
+      cached: Boolean(json.cached),
+      serverExt: parseServerExt(json.path),
+    }
+  }
+
+  if (res.status === 400) {
+    const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string }
+    const code = json.error || 'upload_failed'
+    const message = json.message || json.error || 'Upload failed'
+    throw Object.assign(new Error(message), { code })
+  }
+
+  const text = await res.text().catch(() => '')
+  const error = new Error(
+    `Upload failed (${res.status} ${res.statusText}): ${text || 'no body'}`,
+  )
+  throw Object.assign(error, { code: 'upload_failed', status: res.status })
 }
 

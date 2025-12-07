@@ -39,6 +39,8 @@ export interface Source {
   normalizationError?: NormalizationError
   previewUrl: string
   thumbnailUrl?: string
+  serverUploaded?: boolean
+  serverExt?: string | null
 }
 
 export interface NormalizedProfile {
