@@ -1058,14 +1058,20 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
         try {
           const remote = await getExportStatus(activeRemoteJobId)
-            if (import.meta.env.DEV) {
-              console.log('[dmosh] remote export status', {
-                id: activeRemoteJobId,
-                status: remote.status,
-                error: remote.error,
-                progress: remote.progress,
-              })
+          if (import.meta.env.DEV && Array.isArray(remote.debug) && remote.debug.length > 0) {
+            for (const entry of remote.debug) {
+              // eslint-disable-next-line no-console
+              console.log('[dmosh export debug]', entry.ts, entry.label, entry.payload)
             }
+          }
+          if (import.meta.env.DEV) {
+            console.log('[dmosh] remote export status', {
+              id: activeRemoteJobId,
+              status: remote.status,
+              error: remote.error,
+              progress: remote.progress,
+            })
+          }
           updateRenderQueueState((prev) =>
             prev.map((entry) => {
               if (entry.id !== id) return entry
