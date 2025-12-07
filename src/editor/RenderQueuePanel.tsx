@@ -1,5 +1,5 @@
 import { Download, Play, RefreshCcw, Trash2 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { canDownloadJob, downloadJobResult } from './downloadHelpers'
 import { useProject, type RenderJobStatus } from '../shared/hooks/useProject'
 import { downloadExport } from '../shared/exportApi'
@@ -46,6 +46,41 @@ const RenderQueuePanel = () => {
   const handleToggleAutoDownload = (checked: boolean) => {
     setExportPreferences({ autoDownloadOnComplete: checked })
   }
+    const autoDownloadedRef = useRef<Set<string>>(new Set())
+
+    useEffect(() => {
+      if (!exportPreferences.autoDownloadOnComplete) return
+
+      for (const job of renderQueue) {
+        const canLegacyDownload = canDownloadJob(job)
+        const canRemoteDownload = job.status === 'completed' && !!job.remoteJobId
+
+        if (!canLegacyDownload && !canRemoteDownload) {
+          continue
+        }
+
+        if (autoDownloadedRef.current.has(job.id)) {
+          continue
+        }
+
+        // Mark as handled so we don't re-download on future renders
+        autoDownloadedRef.current.add(job.id)
+
+        if (canRemoteDownload && job.remoteJobId) {
+          // Remote export backend path
+          downloadExport(job.remoteJobId).catch((err) => {
+            console.error('[dmosh] auto-download (remote) failed', err)
+          })
+        } else if (canLegacyDownload) {
+          // Legacy/local result path (used by tests or older jobs)
+          try {
+            downloadJobResult(job)
+          } catch (err) {
+            console.error('[dmosh] auto-download (legacy) failed', err)
+          }
+        }
+      }
+    }, [exportPreferences.autoDownloadOnComplete, renderQueue])
 
   return (
     <div className="flex h-full flex-col divide-y divide-surface-300/60">
