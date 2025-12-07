@@ -151,9 +151,11 @@ const MoshView = () => {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[260px_1fr_320px]">
-      <MoshScopeSidebar scope={activeScope} onScopeChange={setCurrentMoshScope} />
-      <div className="flex flex-col gap-3">
+    <div className="flex h-full w-full flex-col gap-3 lg:flex-row">
+      <div className="w-full shrink-0 lg:w-[260px]">
+        <MoshScopeSidebar scope={activeScope} onScopeChange={setCurrentMoshScope} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div className="space-y-2 rounded-xl border border-surface-300/60 bg-surface-200/80 p-4 shadow-panel">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -184,7 +186,9 @@ const MoshView = () => {
           selectedNodeId={selectedNodeId}
         />
       </div>
-      <MoshSidePanel selectedNode={selectedNode} onAddNode={handleAddNode} onUpdateNode={handleUpdateNode} />
+      <div className="w-full shrink-0 lg:w-[320px]">
+        <MoshSidePanel selectedNode={selectedNode} onAddNode={handleAddNode} onUpdateNode={handleUpdateNode} />
+      </div>
     </div>
   )
 }
