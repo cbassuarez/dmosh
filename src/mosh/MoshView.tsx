@@ -139,7 +139,10 @@ const MoshView = () => {
 
   const handleAddNode = (op: MoshOperationType) => {
     const node = createDefaultNode(op)
-    updateMoshGraph(activeScope, (prev) => ({ ...prev, nodes: [...prev.nodes, node] }))
+    updateMoshGraph(activeScope, (prev) => {
+      const base = prev ?? createEmptyMoshGraph(activeScope)
+      return { ...base, nodes: [...base.nodes, node] }
+    })
     setSelectedNodeId(node.id)
   }
 
