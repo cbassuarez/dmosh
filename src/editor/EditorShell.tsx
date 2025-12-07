@@ -58,25 +58,35 @@ const EditWorkspaceView = ({
   open,
   onStartResize,
 }: EditWorkspaceViewProps) => {
-  const renderTabContent = () => {
-    if (activeTab === 'edit') {
+    const { currentMoshScope } = useProject()
+    const moshEnabled = !(project.moshBypassGlobal ?? false)
+    const renderTabContent = () => {
+      if (activeTab === 'edit') {
+        return (
+          <>
+            <Viewer
+              project={project}
+              moshEnabled={moshEnabled}
+              moshScope={currentMoshScope}
+            />
+            <Timeline project={project} />
+          </>
+        )
+      }
+
       return (
         <>
-          <Viewer project={project} />
-          <Timeline project={project} />
+          <Viewer
+            project={project}
+            moshEnabled={moshEnabled}
+            moshScope={currentMoshScope}
+          />
+          <div className="rounded-xl border border-dashed border-surface-300/60 bg-surface-200/60 p-6 text-sm text-slate-300">
+            Configure export settings in the Export panel. The render queue remains available in the inspector column.
+          </div>
         </>
       )
     }
-
-    return (
-      <>
-        <Viewer project={project} />
-        <div className="rounded-xl border border-dashed border-surface-300/60 bg-surface-200/60 p-6 text-sm text-slate-300">
-          Configure export settings in the Export panel. The render queue remains available in the inspector column.
-        </div>
-      </>
-    )
-  }
 
   return (
     <div ref={containerRef} className="flex min-h-[70vh] gap-3">
