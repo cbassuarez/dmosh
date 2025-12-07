@@ -164,6 +164,8 @@ const VideoViewport = ({
   moshScope,
   moshNodes,
 }: VideoViewportProps) => {
+    const shouldApplyMoshPlayback =
+      kind === 'moshed' && moshEnabled && !(project.moshBypassGlobal ?? false) && !bypassMosh
   const { isPreviewUrlActive } = useProject()
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)

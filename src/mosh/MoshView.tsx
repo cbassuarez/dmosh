@@ -176,9 +176,18 @@ const MoshView = () => {
               {project.moshBypassGlobal ? <ToggleRight className="h-4 w-4 text-accent" /> : <ToggleLeft className="h-4 w-4 text-slate-400" />}
               Bypass Mosh
             </label>
+          <div className="mb-4">
+            <Viewer
+              project={project}
+              // Mosh is “enabled” at the view level when the global bypass is off.
+              moshEnabled={!globalBypass}
+              // Tell Viewer which scope is active (timeline / track / clip).
+              moshScope={activeScope}
+              // Provide the nodes for this scope, so the overlay can show them;
+              // the pipeline itself reads all graphs from project.moshGraphsByScopeKey.
+              moshNodes={graph.nodes}
+            />
           </div>
-          <Viewer project={project} />
-        </div>
           {/* Let the graph occupy the remaining vertical space in the middle column */}
                   <div className="flex-1 min-h-0">
                     <MoshGraphView
