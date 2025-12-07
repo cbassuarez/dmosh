@@ -39,6 +39,13 @@ export interface MoshTransformOptions {
    * is invoked.
    */
   debug?: boolean
+
+  /**
+   * If true, skip all mosh processing and return the original
+   * structural stream unchanged. This is the global mosh bypass
+   * switch for preview/export.
+   */
+  bypass?: boolean
 }
 
 /**
@@ -63,12 +70,20 @@ export function transformStructuralStreamWithGraph(
       frameCount: stream.length,
       nodeCount: effectiveNodes.length,
       nodeOps: effectiveNodes.map((n) => n.op),
+      bypass: options?.bypass ?? false,
     })
   }
 
-  // Pass B: explicit no-op. All nodes are visual-only for now.
-  return stream
+  // Global bypass or no nodes → original structural stream.
+  if (options?.bypass || effectiveNodes.length === 0) {
+    return stream
+  }
+
+  // This is now the one canonical place where node graphs actually
+  // transform the structural stream for preview/export.
+  return applyMoshNodes(stream, effectiveNodes)
 }
+
 
 /**
  * Low-level implementation of frame transforms for various mosh nodes.
