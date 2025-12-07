@@ -59,7 +59,6 @@ export function transformStructuralStreamWithGraph(
 
   if (options?.debug) {
     // Keep logging lightweight: summarize rather than dumping everything.
-    // eslint-disable-next-line no-console
     console.debug('[dmosh] transformStructuralStreamWithGraph', {
       frameCount: stream.length,
       nodeCount: effectiveNodes.length,
