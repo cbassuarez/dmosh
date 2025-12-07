@@ -3,6 +3,8 @@ import { useMemo } from 'react'
 import { canDownloadJob, downloadJobResult } from './downloadHelpers'
 import { useProject, type RenderJobStatus } from '../shared/hooks/useProject'
 import { downloadExport } from '../shared/exportApi'
+import { useExportLoadState } from '../shared/hooks/useExportLoadState'
+import { StatusSprite } from '../components/StatusSprite'
 
 const statusColors: Record<RenderJobStatus, string> = {
   queued: 'bg-slate-500/40 text-slate-200',
@@ -34,6 +36,8 @@ const formatTarget = (kind: string) => {
 const RenderQueuePanel = () => {
   const { renderQueue, startRenderJob, removeRenderJob, exportPreferences, setExportPreferences } =
     useProject()
+  const { loadState, queueLength, oldestQueuedSeconds, estimatedWaitSeconds } =
+    useExportLoadState(renderQueue)
   const sortedQueue = useMemo(
     () => [...renderQueue].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [renderQueue],
@@ -63,6 +67,15 @@ const RenderQueuePanel = () => {
             <span>Auto-download on completion</span>
           </label>
         </div>
+        {loadState !== 'idle' && (
+          <StatusSprite
+            kind="export"
+            loadState={loadState}
+            queueLength={queueLength}
+            oldestQueuedSeconds={oldestQueuedSeconds ?? undefined}
+            estimatedWaitSeconds={estimatedWaitSeconds ?? undefined}
+          />
+        )}
         {sortedQueue.length === 0 && <p className="text-xs text-slate-500">No renders queued.</p>}
         <div className="space-y-3">
           {sortedQueue.map((job) => {
