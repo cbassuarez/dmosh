@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Badge } from 'lucide-react'
 import type {
   ClassicDatamoshNode,
@@ -214,52 +215,88 @@ const PaletteList = ({ title, operations, onAdd }: { title: string; operations: 
   </div>
 )
 
-const MoshSidePanel = ({ selectedNode, onAddNode, onUpdateNode }: Props) => (
-  <div className="flex h-full flex-col gap-4 overflow-y-auto rounded-xl border border-surface-300/60 bg-surface-200/80 p-4">
-    {selectedNode ? (
-      <div className="space-y-4">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Inspector</p>
-          <p className="text-lg font-semibold text-white">{selectedNode.op}</p>
-        </div>
+const MoshSidePanel = ({ selectedNode, onAddNode, onUpdateNode }: Props) => {
+  const [activeTab, setActiveTab] = useState<'palette' | 'inspector'>(selectedNode ? 'inspector' : 'palette')
 
-        {selectedNode.op === 'DropIntraFrames' && (
-          <DropIntraFields
-            node={selectedNode as DropIntraFramesNode}
-            onUpdate={(node) => onUpdateNode(selectedNode.id, () => node)}
-          />
-        )}
-        {selectedNode.op === 'DropPredictedFrames' && (
-          <DropPredictedFields
-            node={selectedNode as DropPredictedFramesNode}
-            onUpdate={(node) => onUpdateNode(selectedNode.id, () => node)}
-          />
-        )}
-        {selectedNode.op === 'HoldReferenceFrame' && (
-          <HoldReferenceFields
-            node={selectedNode as HoldReferenceFrameNode}
-            onUpdate={(node) => onUpdateNode(selectedNode.id, () => node)}
-          />
-        )}
-        {selectedNode.op === 'ClassicDatamosh' && (
-          <ClassicDatamoshFields
-            node={selectedNode as ClassicDatamoshNode}
-            onUpdate={(node) => onUpdateNode(selectedNode.id, () => node)}
-          />
-        )}
-        {experimentalOperations.includes(selectedNode.op) && <StubFields />}
-      </div>
-    ) : (
-      <div className="space-y-4">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Palette</p>
-          <p className="text-sm text-slate-300">Double-click an operation to add it to the current graph.</p>
-        </div>
-        <PaletteList title="Core operations" operations={coreOperations} onAdd={onAddNode} />
-        <PaletteList title="Experimental / Stub" operations={experimentalOperations} onAdd={onAddNode} />
-      </div>
-    )}
-  </div>
-)
+  useEffect(() => {
+    setActiveTab(selectedNode ? 'inspector' : 'palette')
+  }, [selectedNode])
 
-export default MoshSidePanel
+  const showInspector = activeTab === 'inspector' && !!selectedNode
+
+  return (
+    <div className="flex h-full flex-col gap-4 overflow-y-auto rounded-xl border border-surface-300/60 bg-surface-200/80 p-4">
+      <div className="flex items-center justify-between">
+        <div className="inline-flex rounded-full bg-surface-300/40 p-1 text-[11px] uppercase tracking-[0.14em]">
+          <button
+            type="button"
+            className={`rounded-full px-3 py-1 ${
+              activeTab === 'palette' ? 'bg-surface-900 text-white' : 'text-slate-300'
+            }`}
+            onClick={() => setActiveTab('palette')}
+          >
+            Palette
+          </button>
+          <button
+            type="button"
+            className={`rounded-full px-3 py-1 ${
+              activeTab === 'inspector' ? 'bg-surface-900 text-white' : 'text-slate-300'
+            } ${!selectedNode ? 'opacity-40' : ''}`}
+            onClick={() => {
+              if (selectedNode) setActiveTab('inspector')
+            }}
+            disabled={!selectedNode}
+          >
+            Inspector
+          </button>
+        </div>
+      </div>
+
+      {showInspector ? (
+        <div className="space-y-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Inspector</p>
+            <p className="text-lg font-semibold text-white">{selectedNode!.op}</p>
+          </div>
+
+          {selectedNode!.op === 'DropIntraFrames' && (
+            <DropIntraFields
+              node={selectedNode as DropIntraFramesNode}
+              onUpdate={(node) => onUpdateNode(selectedNode!.id, () => node)}
+            />
+          )}
+          {selectedNode!.op === 'DropPredictedFrames' && (
+            <DropPredictedFields
+              node={selectedNode as DropPredictedFramesNode}
+              onUpdate={(node) => onUpdateNode(selectedNode!.id, () => node)}
+            />
+          )}
+          {selectedNode!.op === 'HoldReferenceFrame' && (
+            <HoldReferenceFields
+              node={selectedNode as HoldReferenceFrameNode}
+              onUpdate={(node) => onUpdateNode(selectedNode!.id, () => node)}
+            />
+          )}
+          {selectedNode!.op === 'ClassicDatamosh' && (
+            <ClassicDatamoshFields
+              node={selectedNode as ClassicDatamoshNode}
+              onUpdate={(node) => onUpdateNode(selectedNode!.id, () => node)}
+            />
+          )}
+          {experimentalOperations.includes(selectedNode!.op) && <StubFields />}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Palette</p>
+            <p className="text-sm text-slate-300">Double-click an operation to add it to the current graph.</p>
+          </div>
+          <PaletteList title="Core operations" operations={coreOperations} onAdd={onAddNode} />
+          <PaletteList title="Experimental / Stub" operations={experimentalOperations} onAdd={onAddNode} />
+        </div>
+      )}
+    </div>
+  )
+ }
+ 
+ export default MoshSidePanel

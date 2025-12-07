@@ -119,30 +119,12 @@ const MoshView = () => {
   }, [activeScope, graph, project, scopeKey, updateMoshGraph])
 
   const selectedNode = graph.nodes.find((node) => node.id === selectedNodeId) ?? null
-  const scopeOptions = useMemo(() => {
-    if (!project) return []
-    const base: { label: string; value: MoshScopeId }[] = [
-      { label: timelineLabel(project.metadata.name), value: { kind: 'timeline', timelineId } },
-      ...project.timeline.tracks.map((track) => ({
-        label: `Track: ${track.name ?? track.id}`,
-        value: { kind: 'track' as const, timelineId, trackId: track.id },
-      })),
-      ...project.timeline.clips.map((clip) => ({
-        label: `Clip: ${clip.id}`,
-        value: { kind: 'clip' as const, timelineId, trackId: clip.trackId, clipId: clip.id },
-      })),
-    ]
-    return base
-  }, [project, timelineId])
 
   if (!project) return null
 
   const handleAddNode = (op: MoshOperationType) => {
     const node = createDefaultNode(op)
-    updateMoshGraph(activeScope, (prev) => {
-      const base = prev ?? createEmptyMoshGraph(activeScope)
-      return { ...base, nodes: [...base.nodes, node] }
-    })
+    updateMoshGraph(activeScope, (prev) => ({ ...prev, nodes: [...prev.nodes, node] }))
     setSelectedNodeId(node.id)
   }
 
@@ -156,7 +138,13 @@ const MoshView = () => {
   return (
     <div className="flex h-full w-full flex-col gap-3 lg:flex-row">
       <div className="w-full shrink-0 lg:w-[260px]">
-        <MoshScopeSidebar scope={activeScope} onScopeChange={setCurrentMoshScope} />
+          <MoshScopeSidebar
+                    scope={activeScope}
+                    onScopeChange={(scope) => {
+                      setCurrentMoshScope(scope)
+                      setSelectedNodeId(null)
+                    }}
+                  />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div className="space-y-2 rounded-xl border border-surface-300/60 bg-surface-200/80 p-4 shadow-panel">
@@ -175,21 +163,11 @@ const MoshView = () => {
               Bypass Mosh
             </label>
           </div>
-          <Viewer
-            project={project}
-            moshEnabled={!(project.moshBypassGlobal ?? false)}
-            moshScope={activeScope}
-            moshNodes={graph.nodes}
-          />
+          <Viewer project={project} />
         </div>
         <MoshGraphView
           graph={graph}
-          scopeOptions={scopeOptions}
-          onScopeChange={(scope) => {
-            setCurrentMoshScope(scope)
-            setSelectedNodeId(null)
-          }}
-          onUpdateGraph={(updater) => updateMoshGraph(activeScope, updater)}
+            onUpdateGraph={(updater) => updateMoshGraph(activeScope, updater)}
           onSelectNode={setSelectedNodeId}
           selectedNodeId={selectedNodeId}
         />
