@@ -15,7 +15,7 @@ import { usePlaybackLoop } from './usePlaybackLoop'
 import { timelineEndFrame } from './timelineUtils'
 import RenderQueuePanel from './RenderQueuePanel'
 import MobileEditorLayout from './MobileEditorLayout'
-import MoshGraphPanel from '../mosh/ui/MoshGraphPanel'
+import MoshView from '../mosh/MoshView'
 
 const MIN_PANEL_WIDTH = 220
 
@@ -231,7 +231,7 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
           </div>
           <Viewer project={project} />
           {activeTab === 'edit' && <Timeline project={project} />}
-          {activeTab === 'mosh' && <MoshGraphPanel />}
+          {activeTab === 'mosh' && <MoshView />}
           {activeTab === 'export' && (
             <div className="rounded-xl border border-dashed border-surface-300/60 bg-surface-200/60 p-6 text-sm text-slate-300">
               Configure export settings in the Export panel. The render queue remains available in the inspector column.

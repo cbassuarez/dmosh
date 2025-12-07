@@ -1,8 +1,8 @@
 import type { RenderSettings } from '../../engine/renderTypes'
 import { CLASSIC_DATAMOSH_ID } from '../ops/composites/classicDatamosh'
-import type { MoshGraph } from './types'
+import type { LegacyMoshGraph } from './types'
 
-const isClassicDatamoshGraph = (graph: MoshGraph): boolean => {
+const isClassicDatamoshGraph = (graph: LegacyMoshGraph): boolean => {
   if (graph.id === CLASSIC_DATAMOSH_ID) return true
   const dropNode = graph.nodes.find((node) => node.kind === 'DropIntraFrames')
   const holdNode = graph.nodes.find((node) => node.kind === 'HoldReferenceFrame')
@@ -12,13 +12,13 @@ const isClassicDatamoshGraph = (graph: MoshGraph): boolean => {
   )
 }
 
-const extractClassicOperations = (graph: MoshGraph): string[] => graph.nodes.map((node) => node.kind)
+const extractClassicOperations = (graph: LegacyMoshGraph): string[] => graph.nodes.map((node) => node.kind)
 
 /**
  * Maps a structured mosh graph onto legacy render settings flags for backward compatibility.
  */
 export function applyMoshGraphToRenderSettings(
-  graph: MoshGraph | null | undefined,
+  graph: LegacyMoshGraph | null | undefined,
   settings: RenderSettings,
 ): RenderSettings {
   if (!graph) return settings

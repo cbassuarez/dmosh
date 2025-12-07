@@ -22,7 +22,7 @@ import Inspector from './Inspector'
 import MaskTools from './MaskTools'
 import RenderQueuePanel from './RenderQueuePanel'
 import { MobileMode } from './mobileTypes'
-import MoshGraphPanel from '../mosh/ui/MoshGraphPanel'
+import MoshView from '../mosh/MoshView'
 
 const navItems: { id: MobileMode; label: string; icon: React.ReactNode }[] = [
   { id: 'project', label: 'Project', icon: <Clapperboard className="h-5 w-5" /> },
@@ -513,7 +513,7 @@ const BottomSheetArea = ({ mode, onCloseExport }: { mode: MobileMode; onCloseExp
           <RenderQueuePanel />
         </div>
       )}
-      {mode === 'mosh' && <MoshGraphPanel />}
+      {mode === 'mosh' && <MoshView />}
       {mode === 'export' && <ExportSheetMobile project={project} onClose={onCloseExport} />}
     </div>
   )

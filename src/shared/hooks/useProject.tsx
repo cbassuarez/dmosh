@@ -4,6 +4,7 @@ import {
   AutomationCurve,
   DropKeyframesOp,
   FreezeReferenceOp,
+  MoshScopeId,
   cleanupSourcePreviewUrls,
   Mask,
   Operation,
@@ -22,10 +23,11 @@ import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame
 import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerRuntimeSettings, ViewerState } from '../../editor/viewerState'
 import { MobileMode } from '../../editor/mobileTypes'
 import { applyMoshGraphToRenderSettings } from '../../mosh/graph/legacyAdapter'
+import { DEFAULT_TIMELINE_ID, createEmptyMoshGraph, type MoshGraph } from '../../mosh/moshModel'
+import { getGraphForScope, upsertGraphRecord } from '../../mosh/moshState'
 
 const STORAGE_KEY = 'datamosh-current-project'
 const EXPORT_PREFS_STORAGE_KEY = 'dmosh_export_prefs'
-
 type SelectionState = {
   selectedClipId: string | null
   selectedMaskId: string | null
@@ -70,6 +72,7 @@ type TransportState = {
 
 export type ProjectContextShape = {
   project: Project | null
+  currentMoshScope: MoshScopeId | null
   selection: SelectionState
   transport: TransportState
   viewer: ViewerState
@@ -128,6 +131,10 @@ export type ProjectContextShape = {
   activeMobileTrackId: string | null
   setActiveMobileTrackId: (id: string | null) => void
   setViewerRuntimeSettings: (settings: Partial<ViewerRuntimeSettings>) => void
+  getMoshGraphForScope: (scope: MoshScopeId) => MoshGraph
+  updateMoshGraph: (scope: MoshScopeId, updater: (graph: MoshGraph) => MoshGraph) => void
+  setCurrentMoshScope: (scope: MoshScopeId) => void
+  setMoshBypassGlobal: (bypass: boolean) => void
 }
 
 const ProjectContext = createContext<ProjectContextShape | null>(null)
@@ -206,6 +213,7 @@ export const createEmptyProject = (): Project => ({
   settings: defaultSettings,
   sources: [],
   timeline: {
+    id: DEFAULT_TIMELINE_ID,
     fps: defaultSettings.fps,
     width: defaultSettings.width,
     height: defaultSettings.height,
@@ -229,6 +237,9 @@ export const createEmptyProject = (): Project => ({
   },
   automationCurves: [],
   moshGraph: null,
+  moshGraphsByScopeKey: {},
+  currentMoshScope: { kind: 'timeline', timelineId: DEFAULT_TIMELINE_ID },
+  moshBypassGlobal: false,
 })
 
 const isProject = (value: unknown): value is Project => {
@@ -275,10 +286,18 @@ const stripTransientSourceUrls = (project: Project): Project => ({
 
 const shortHash = (hash: string) => `${hash.slice(0, 8)}…${hash.slice(-4)}`
 
-const ensureMoshGraph = (project: Project): Project => ({
-  ...project,
-  moshGraph: project.moshGraph ?? null,
-})
+const ensureMoshState = (project: Project): Project => {
+  const timelineId = project.timeline.id ?? DEFAULT_TIMELINE_ID
+  const scope: MoshScopeId = project.currentMoshScope ?? { kind: 'timeline', timelineId }
+  return {
+    ...project,
+    timeline: { ...project.timeline, id: timelineId },
+    moshGraph: project.moshGraph ?? null,
+    moshGraphsByScopeKey: project.moshGraphsByScopeKey ?? {},
+    currentMoshScope: scope,
+    moshBypassGlobal: project.moshBypassGlobal ?? false,
+  }
+}
 
 const computeHash = async (file: File) => {
   const buffer = await file.arrayBuffer()
@@ -329,7 +348,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const save = useCallback(
     (next: Project | null) => {
       if (next) {
-        const normalized = ensureMoshGraph(ensureSourcePreviewUrls(ensureVideoTracks(next)))
+        const normalized = ensureMoshState(ensureSourcePreviewUrls(ensureVideoTracks(next)))
         normalized.sources.forEach((source) => {
           if (source.previewUrl?.startsWith('blob:')) {
             sessionPreviewUrlsRef.current.add(source.previewUrl)
@@ -355,7 +374,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       if (!stored) return
       const parsed = JSON.parse(stored)
       if (isProject(parsed)) {
-        setProject(ensureMoshGraph(ensureSourcePreviewUrls(ensureVideoTracks(stripTransientSourceUrls(parsed)))))
+        setProject(ensureMoshState(ensureSourcePreviewUrls(ensureVideoTracks(stripTransientSourceUrls(parsed)))))
       }
     } catch (err) {
       console.error(err)
@@ -431,7 +450,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
         setError(null)
         cleanupSourcePreviewUrls(project, sessionPreviewUrlsRef.current)
         sourceFileMapRef.current.clear()
-        save(ensureMoshGraph(stripTransientSourceUrls(parsed)))
+        save(ensureMoshState(stripTransientSourceUrls(parsed)))
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to parse project file'
         setError(message)
@@ -810,6 +829,43 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const setViewerRuntimeSettings = useCallback((settings: Partial<ViewerRuntimeSettings>) => {
     setViewerRuntimeSettingsState((prev) => ({ ...prev, ...settings }))
   }, [])
+
+  const getMoshGraphForScope = useCallback(
+    (scope: MoshScopeId): MoshGraph => {
+      const current = projectRef.current
+      if (!current) return createEmptyMoshGraph(scope)
+      return getGraphForScope(current.moshGraphsByScopeKey, scope)
+    },
+    [],
+  )
+
+  const updateMoshGraph = useCallback(
+    (scope: MoshScopeId, updater: (graph: MoshGraph) => MoshGraph) => {
+      const current = projectRef.current
+      if (!current) return
+      const nextGraphs = upsertGraphRecord(current.moshGraphsByScopeKey, scope, updater)
+      save({ ...current, moshGraphsByScopeKey: nextGraphs })
+    },
+    [save],
+  )
+
+  const setCurrentMoshScope = useCallback(
+    (scope: MoshScopeId) => {
+      const current = projectRef.current
+      if (!current) return
+      save({ ...current, currentMoshScope: scope })
+    },
+    [save],
+  )
+
+  const setMoshBypassGlobal = useCallback(
+    (bypass: boolean) => {
+      const current = projectRef.current
+      if (!current) return
+      save({ ...current, moshBypassGlobal: bypass })
+    },
+    [save],
+  )
 
   const setExportPreferences = useCallback((patch: Partial<ExportPreferences>) => {
     setExportPreferencesState((prev) => {
@@ -1228,6 +1284,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const value = useMemo<ProjectContextShape>(
     () => ({
       project,
+      currentMoshScope: project?.currentMoshScope ?? null,
       selection,
       transport,
       viewer,
@@ -1281,6 +1338,10 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       setMobileMode: updateMobileMode,
       activeMobileTrackId,
       setActiveMobileTrackId: updateActiveMobileTrackId,
+      getMoshGraphForScope,
+      updateMoshGraph,
+      setCurrentMoshScope,
+      setMoshBypassGlobal,
     }),
     [
       addAutomationCurve,
@@ -1323,6 +1384,10 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       setViewerResolution,
       setViewerOverlays,
       setViewerRuntimeSettings,
+      getMoshGraphForScope,
+      updateMoshGraph,
+      setCurrentMoshScope,
+      setMoshBypassGlobal,
       exportPreferences,
       setExportPreferences,
       getSourceFile,
