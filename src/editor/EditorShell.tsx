@@ -15,6 +15,7 @@ import { usePlaybackLoop } from './usePlaybackLoop'
 import { timelineEndFrame } from './timelineUtils'
 import RenderQueuePanel from './RenderQueuePanel'
 import MobileEditorLayout from './MobileEditorLayout'
+import MoshGraphPanel from '../mosh/ui/MoshGraphPanel'
 
 const MIN_PANEL_WIDTH = 220
 
@@ -46,6 +47,7 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
   const [open, setOpen] = useState({ left: true, right: true })
   const [sizes, setSizes] = useState({ left: 280, right: 320, center: 720 })
   const [showExport, setShowExport] = useState(false)
+  const [activeTab, setActiveTab] = useState<'edit' | 'mosh' | 'export'>('edit')
 
   const { project, exportProject, importSources, transport, setPlayState, setTimelineFrame } = useProject()
   const { status } = useEngine()
@@ -115,6 +117,17 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
 
   if (!project) return null
 
+  const handleTabChange = (tab: 'edit' | 'mosh' | 'export') => {
+    setActiveTab(tab)
+    setShowExport(tab === 'export')
+  }
+
+  const workspaceTabs: { id: 'edit' | 'mosh' | 'export'; label: string }[] = [
+    { id: 'edit', label: 'Edit' },
+    { id: 'mosh', label: 'Mosh' },
+    { id: 'export', label: 'Export' },
+  ]
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between rounded-xl border border-surface-300/60 bg-surface-200/80 px-4 py-3 shadow-panel">
@@ -130,7 +143,7 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
             <FolderDown className="h-4 w-4" /> Import clips
           </button>
           <button
-            onClick={() => setShowExport(true)}
+            onClick={() => handleTabChange('export')}
             className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
           >
             <Download className="h-4 w-4" /> Export…
@@ -184,7 +197,7 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
         </AnimatePresence>
 
         <div className="flex flex-1 flex-col gap-3" style={{ minWidth: sizes.center }}>
-          <div className="flex items-center justify-between text-xs text-slate-400">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
             <button
               onClick={() => setOpen((v) => ({ ...v, left: !v.left }))}
               className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
@@ -192,7 +205,22 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
               {open.left ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
               {open.left ? 'Hide project' : 'Show project'}
             </button>
-            <MaskTools />
+            <div className="flex flex-wrap items-center gap-2">
+              {workspaceTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabChange(tab.id)}
+                  className={`rounded px-3 py-[6px] text-xs uppercase tracking-[0.12em] ${
+                    tab.id === activeTab
+                      ? 'bg-accent text-black shadow'
+                      : 'border border-surface-300/60 text-slate-200 hover:border-accent/70'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+              <MaskTools />
+            </div>
             <button
               onClick={() => setOpen((v) => ({ ...v, right: !v.right }))}
               className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
@@ -202,7 +230,13 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
             </button>
           </div>
           <Viewer project={project} />
-          <Timeline project={project} />
+          {activeTab === 'edit' && <Timeline project={project} />}
+          {activeTab === 'mosh' && <MoshGraphPanel />}
+          {activeTab === 'export' && (
+            <div className="rounded-xl border border-dashed border-surface-300/60 bg-surface-200/60 p-6 text-sm text-slate-300">
+              Configure export settings in the Export panel. The render queue remains available in the inspector column.
+            </div>
+          )}
         </div>
 
         <AnimatePresence initial={false}>
@@ -229,7 +263,13 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
             </motion.aside>
           )}
         </AnimatePresence>
-        {project && <ExportDialog project={project} isOpen={showExport} onClose={() => setShowExport(false)} />}
+        {project && (
+          <ExportDialog
+            project={project}
+            isOpen={showExport || activeTab === 'export'}
+            onClose={() => handleTabChange('edit')}
+          />
+        )}
       </div>
     </div>
   )

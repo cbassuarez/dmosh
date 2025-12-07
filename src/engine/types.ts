@@ -1,4 +1,5 @@
 import type { RenderSettings } from './renderTypes'
+import type { MoshGraph } from '../mosh/graph/types'
 
 export interface Project {
   version: string
@@ -10,6 +11,8 @@ export interface Project {
   masks: Mask[]
   operations: Operations
   automationCurves: AutomationCurve[]
+  /** Optional structured datamosh operation graph. */
+  moshGraph?: MoshGraph | null
 }
 
 export interface ProjectMetadata {

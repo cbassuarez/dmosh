@@ -22,11 +22,12 @@ import Inspector from './Inspector'
 import MaskTools from './MaskTools'
 import RenderQueuePanel from './RenderQueuePanel'
 import { MobileMode } from './mobileTypes'
+import MoshGraphPanel from '../mosh/ui/MoshGraphPanel'
 
 const navItems: { id: MobileMode; label: string; icon: React.ReactNode }[] = [
   { id: 'project', label: 'Project', icon: <Clapperboard className="h-5 w-5" /> },
   { id: 'edit', label: 'Edit', icon: <PencilLine className="h-5 w-5" /> },
-  { id: 'ops', label: 'Ops', icon: <Wand2 className="h-5 w-5" /> },
+  { id: 'mosh', label: 'Mosh', icon: <Wand2 className="h-5 w-5" /> },
   { id: 'export', label: 'Export', icon: <Download className="h-5 w-5" /> },
 ]
 
@@ -505,13 +506,14 @@ const BottomSheetArea = ({ mode, onCloseExport }: { mode: MobileMode; onCloseExp
   return (
     <div className="mt-3 rounded-t-3xl border border-surface-300/60 bg-surface-200/90 p-4 shadow-2xl">
       {mode === 'project' && <ProjectPanel project={project} />}
-      {mode === 'edit' && <Inspector project={project} />}
-      {mode === 'ops' && (
+      {mode === 'edit' && (
         <div className="space-y-4">
+          <Inspector project={project} />
           <MaskTools />
           <RenderQueuePanel />
         </div>
       )}
+      {mode === 'mosh' && <MoshGraphPanel />}
       {mode === 'export' && <ExportSheetMobile project={project} onClose={onCloseExport} />}
     </div>
   )
