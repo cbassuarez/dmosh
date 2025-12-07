@@ -122,11 +122,23 @@ const MoshView = () => {
 
   if (!project) return null
 
-  const handleAddNode = (op: MoshOperationType) => {
-    const node = createDefaultNode(op)
-    updateMoshGraph(activeScope, (prev) => ({ ...prev, nodes: [...prev.nodes, node] }))
-    setSelectedNodeId(node.id)
-  }
+      const handleAddNode = (op: MoshOperationType) => {
+          // "add-or-select" per scope + operation type.
+          // If a node with this op already exists in the active scope's graph,
+          // just select it instead of creating a duplicate.
+          const existing = graph.nodes.find((node) => node.op === op)
+          if (existing) {
+            setSelectedNodeId(existing.id)
+            return
+          }
+      
+          const node = createDefaultNode(op)
+          updateMoshGraph(activeScope, (prev) => ({
+            ...prev,
+            nodes: [...prev.nodes, node],
+          }))
+          setSelectedNodeId(node.id)
+        }
 
   const handleUpdateNode = (nodeId: string, updater: (node: MoshNode) => MoshNode) => {
     updateMoshGraph(activeScope, (prev) => ({

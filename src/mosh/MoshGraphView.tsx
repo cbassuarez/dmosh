@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Slash } from 'lucide-react'
 import type { MoshGraph, MoshNode, MoshOperationType } from './moshModel'
 
@@ -119,6 +120,22 @@ const NodeCard = ({
 )
 
 const MoshGraphView = ({ graph, onUpdateGraph, onSelectNode, selectedNodeId }: Props) => {
+  // When a node becomes selected (including via palette double-click),
+  // ensure it is scrolled into view in the horizontal node strip.
+  useEffect(() => {
+    if (!selectedNodeId) return
+    const el = document.querySelector<HTMLElement>(
+      `[data-mosh-node-id="${selectedNodeId}"]`,
+    )
+    if (el) {
+      el.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      })
+    }
+  }, [selectedNodeId])
+
   return (
     <div className="space-y-3 rounded-xl border border-surface-300/60 bg-surface-200/80 p-4 shadow-panel">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -140,8 +157,12 @@ const MoshGraphView = ({ graph, onUpdateGraph, onSelectNode, selectedNodeId }: P
         {graph.nodes.length === 0 && (
           <p className="text-sm text-slate-400">No nodes yet. Add an operation from the palette.</p>
         )}
-        {graph.nodes.map((node, index) => (
-          <div key={node.id} className="flex items-center gap-3">
+          {graph.nodes.map((node, index) => (
+                    <div
+                      key={node.id}
+                      className="flex items-center gap-3"
+                      data-mosh-node-id={node.id}
+                    >
             <NodeCard
               node={node}
               isSelected={selectedNodeId === node.id}
