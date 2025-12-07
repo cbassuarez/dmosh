@@ -122,6 +122,30 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
     setShowExport(tab === 'export')
   }
 
+  const renderTabContent = () => {
+    if (activeTab === 'edit') {
+      return (
+        <>
+          <Viewer project={project} />
+          <Timeline project={project} />
+        </>
+      )
+    }
+
+    if (activeTab === 'mosh') {
+      return <MoshView />
+    }
+
+    return (
+      <>
+        <Viewer project={project} />
+        <div className="rounded-xl border border-dashed border-surface-300/60 bg-surface-200/60 p-6 text-sm text-slate-300">
+          Configure export settings in the Export panel. The render queue remains available in the inspector column.
+        </div>
+      </>
+    )
+  }
+
   const workspaceTabs: { id: 'edit' | 'mosh' | 'export'; label: string }[] = [
     { id: 'edit', label: 'Edit' },
     { id: 'mosh', label: 'Mosh' },
@@ -229,14 +253,7 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
               {open.right ? 'Hide inspector' : 'Show inspector'}
             </button>
           </div>
-          <Viewer project={project} />
-          {activeTab === 'edit' && <Timeline project={project} />}
-          {activeTab === 'mosh' && <MoshView />}
-          {activeTab === 'export' && (
-            <div className="rounded-xl border border-dashed border-surface-300/60 bg-surface-200/60 p-6 text-sm text-slate-300">
-              Configure export settings in the Export panel. The render queue remains available in the inspector column.
-            </div>
-          )}
+          {renderTabContent()}
         </div>
 
         <AnimatePresence initial={false}>
