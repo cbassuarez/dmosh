@@ -19,7 +19,6 @@ import {
   extractActiveMoshOperations,
   type MoshContextFrame,
 } from '../engine/moshPipeline'
-import { getMoshFrameIndexMapping } from './moshPlayback'
 import type { MoshNode, MoshScopeId } from '../mosh/moshModel'
 import { useProject } from '../shared/hooks/useProject'
 import { getActiveClipAtFrame, timelineEndFrame } from './timelineUtils'
@@ -180,31 +179,35 @@ const VideoViewport = ({
   const shouldApplyMoshPlayback =
     kind === 'moshed' && moshEnabled && !(project.moshBypassGlobal ?? false) && !bypassMosh
 
-  const moshedFrames = useMemo(() => {
-    if (!baseContext) return []
+    const moshedFrames = useMemo(() => {
+      if (!baseContext) return []
 
-    if (shouldApplyMoshPlayback && moshNodes && moshNodes.length > 0) {
-      const mapping = getMoshFrameIndexMapping(baseContext.frames.length, shouldApplyMoshPlayback, moshNodes)
-      if (mapping.length === 0) return []
-      return mapping
-        .map((frameIndex) => baseContext.frames[Math.min(baseContext.frames.length - 1, frameIndex)])
-        .filter(Boolean)
-    }
+      // If we are not in a moshed viewport or mosh is disabled/bypassed,
+      // just return the base frames unchanged.
+      if (!shouldApplyMoshPlayback) {
+        return baseContext.frames
+      }
 
-    const result = compiledPipeline(baseContext)
-    return result.frames
-  }, [
-    baseContext,
-    compiledPipeline,
-    moshNodes,
-    shouldApplyMoshPlayback,
-  ])
-  const activeOps = useMemo(() => {
-    if (moshNodes) {
-      return moshNodes.filter((node) => !node.bypass).map((node) => node.op)
-    }
-    return extractActiveMoshOperations(moshGraphs)
-  }, [moshGraphs, moshNodes])
+      // Apply the compiled pipeline from all relevant graphs
+      const result = compiledPipeline(baseContext)
+      return result.frames
+    }, [baseContext, compiledPipeline, shouldApplyMoshPlayback])
+
+    const activeOps = useMemo(() => {
+      // If mosh is disabled or globally/viewer-bypassed, treat as no active ops.
+      if (!moshEnabled || (project.moshBypassGlobal ?? false) || (bypassMosh ?? false)) {
+        return []
+      }
+
+      // When a per-scope node list is provided (Mosh view), show that.
+      if (moshNodes && moshNodes.length > 0) {
+        return moshNodes.filter((node) => !node.bypass).map((node) => node.op)
+      }
+
+      // Otherwise, compute from all graphs relevant to this clip.
+      return extractActiveMoshOperations(moshGraphs)
+    }, [moshEnabled, bypassMosh, moshNodes, moshGraphs, project.moshBypassGlobal])
+
   const clipDuration = useMemo(() => (clip ? Math.max(0, clip.endFrame - clip.startFrame) : 0), [clip])
   const shouldBypassMosh = (project.moshBypassGlobal ?? false) || (bypassMosh ?? false)
 
