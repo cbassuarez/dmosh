@@ -1058,7 +1058,14 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
 
         try {
           const remote = await getExportStatus(activeRemoteJobId)
-
+            if (import.meta.env.DEV) {
+              console.log('[dmosh] remote export status', {
+                id: activeRemoteJobId,
+                status: remote.status,
+                error: remote.error,
+                progress: remote.progress,
+              })
+            }
           updateRenderQueueState((prev) =>
             prev.map((entry) => {
               if (entry.id !== id) return entry
