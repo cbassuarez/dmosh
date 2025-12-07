@@ -19,12 +19,22 @@ import {
   extractActiveMoshOperations,
   type MoshContextFrame,
 } from '../engine/moshPipeline'
+import { applyMoshNodes, buildStructuralStream } from '../mosh/moshEngine'
+import type { MoshNode, MoshScopeId } from '../mosh/moshModel'
 import { useProject } from '../shared/hooks/useProject'
 import { getActiveClipAtFrame, timelineEndFrame } from './timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution } from './viewerState'
 
 interface Props {
   project: Project
+
+  /**
+   * Optional Mosh playback configuration. When provided and enabled, Viewer
+   * will use the structural mosh engine for playback mapping (Mosh tab only).
+   */
+  moshEnabled?: boolean
+  moshScope?: MoshScopeId | null
+  moshNodes?: MoshNode[] | null
 }
 
 const resolutionLabel: Record<ViewerResolution, string> = {
@@ -68,6 +78,9 @@ interface VideoViewportProps {
   overlays: ViewerOverlays
   previewMaxHeight?: number
   bypassMosh?: boolean
+  moshEnabled?: boolean
+  moshScope?: MoshScopeId | null
+  moshNodes?: MoshNode[] | null
 }
 
 const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -140,7 +153,18 @@ const mapTimelineFrameToMoshedFrame = (
   return frames[targetIndex] ?? null
 }
 
-const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxHeight, bypassMosh }: VideoViewportProps) => {
+const VideoViewport = ({
+  kind,
+  project,
+  frame,
+  resolution,
+  overlays,
+  previewMaxHeight,
+  bypassMosh,
+  moshEnabled,
+  moshScope,
+  moshNodes,
+}: VideoViewportProps) => {
   const { isPreviewUrlActive } = useProject()
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -154,10 +178,33 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
   const baseContext = useMemo(() => (clip ? buildContextForClip(clip, project.timeline.fps) : null), [clip, project.timeline.fps])
   const moshedFrames = useMemo(() => {
     if (!baseContext) return []
+
+    const shouldUseStructuralMosh =
+      kind === 'moshed' && moshEnabled && !(project.moshBypassGlobal ?? false) && !bypassMosh
+
+    if (shouldUseStructuralMosh && moshNodes && moshNodes.length > 0) {
+      const scopeKey = moshScope
+        ? `${moshScope.kind}:${moshScope.timelineId}:${moshScope.trackId ?? ''}:${moshScope.clipId ?? ''}`
+        : 'global'
+      void scopeKey
+      const structural = buildStructuralStream(baseContext.frames.length)
+      const moshedStructural = applyMoshNodes(structural, moshNodes)
+      return moshedStructural.map((frame) => ({
+        index: frame.index,
+        frameType: frame.type,
+        contentFrom: frame.index,
+      }))
+    }
+
     const result = compiledPipeline(baseContext)
     return result.frames
-  }, [baseContext, compiledPipeline])
-  const activeOps = useMemo(() => extractActiveMoshOperations(moshGraphs), [moshGraphs])
+  }, [baseContext, bypassMosh, compiledPipeline, kind, moshEnabled, moshNodes, moshScope, project.moshBypassGlobal])
+  const activeOps = useMemo(() => {
+    if (moshNodes) {
+      return moshNodes.filter((node) => !node.bypass).map((node) => node.op)
+    }
+    return extractActiveMoshOperations(moshGraphs)
+  }, [moshGraphs, moshNodes])
   const clipDuration = useMemo(() => (clip ? Math.max(0, clip.endFrame - clip.startFrame) : 0), [clip])
   const shouldBypassMosh = (project.moshBypassGlobal ?? false) || (bypassMosh ?? false)
 
@@ -293,6 +340,9 @@ const CompareView = ({
   overlays,
   previewMaxHeight,
   bypassMosh,
+  moshEnabled,
+  moshScope,
+  moshNodes,
 }: {
   project: Project
   frame: number
@@ -300,6 +350,9 @@ const CompareView = ({
   overlays: ViewerOverlays
   previewMaxHeight?: number
   bypassMosh: boolean
+  moshEnabled?: boolean
+  moshScope?: MoshScopeId | null
+  moshNodes?: MoshNode[] | null
 }) => (
   <div className="grid h-full grid-cols-2 gap-[1px] bg-surface-900">
     <VideoViewport
@@ -318,6 +371,9 @@ const CompareView = ({
       overlays={overlays}
       previewMaxHeight={previewMaxHeight}
       bypassMosh={bypassMosh}
+      moshEnabled={moshEnabled}
+      moshScope={moshScope}
+      moshNodes={moshNodes}
     />
   </div>
 )
@@ -346,7 +402,7 @@ const ModeToggle = ({
   </div>
 )
 
-const Viewer = ({ project }: Props) => {
+const Viewer = ({ project, moshEnabled, moshScope, moshNodes }: Props) => {
   const {
     transport,
     viewer,
@@ -477,6 +533,9 @@ const Viewer = ({ project }: Props) => {
               overlays={viewer.overlays}
               previewMaxHeight={viewerRuntimeSettings.previewMaxHeight}
               bypassMosh={bypassMosh || (project.moshBypassGlobal ?? false)}
+              moshEnabled={moshEnabled}
+              moshScope={moshScope}
+              moshNodes={moshNodes}
             />
           )}
           {viewer.mode === 'original' && (
@@ -498,6 +557,9 @@ const Viewer = ({ project }: Props) => {
               overlays={viewer.overlays}
               previewMaxHeight={viewerRuntimeSettings.previewMaxHeight}
               bypassMosh={bypassMosh || (project.moshBypassGlobal ?? false)}
+              moshEnabled={moshEnabled}
+              moshScope={moshScope}
+              moshNodes={moshNodes}
             />
           )}
           {!activeClip && (
