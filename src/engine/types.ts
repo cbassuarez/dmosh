@@ -1,5 +1,7 @@
 import type { RenderSettings } from './renderTypes'
-import type { MoshGraph } from '../mosh/graph/types'
+import type { LegacyMoshGraph } from '../mosh/graph/types'
+import type { MoshGraph, MoshScopeId } from '../mosh/moshModel'
+export type { MoshScopeId } from '../mosh/moshModel'
 
 export interface Project {
   version: string
@@ -12,7 +14,11 @@ export interface Project {
   operations: Operations
   automationCurves: AutomationCurve[]
   /** Optional structured datamosh operation graph. */
-  moshGraph?: MoshGraph | null
+  moshGraph?: LegacyMoshGraph | null
+  /** New per-scope mosh graphs keyed by scope. */
+  moshGraphsByScopeKey?: Record<string, MoshGraph>
+  currentMoshScope?: MoshScopeId | null
+  moshBypassGlobal?: boolean
 }
 
 export interface ProjectMetadata {
@@ -75,6 +81,7 @@ export const cleanupSourcePreviewUrls = (project?: Project | null, activeUrls?: 
 }
 
 export interface Timeline {
+  id?: string
   fps: number
   width: number
   height: number

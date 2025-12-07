@@ -68,3 +68,5 @@ export interface MoshGraph {
   edges: MoshEdge[]
   paramLinks: MoshParamLink[]
 }
+
+export type LegacyMoshGraph = MoshGraph
