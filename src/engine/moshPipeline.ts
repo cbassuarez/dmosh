@@ -295,25 +295,32 @@ export const applyMoshGraphsToRenderSettings = (
   project: Project,
   settings: RenderSettings,
 ): RenderSettings => {
-  // 1) Global bypass: do nothing, preserve identity
+  // 1) Global bypass → identity
   if (project.moshBypassGlobal) return settings
 
-  // 2) No graphs at all → no structural datamosh
+  // 2) Collect graphs (timeline + track + clip scopes)
   const graphs = collectAllGraphs(project)
-  if (graphs.length === 0) return settings
+  if (!graphs.length) return settings
 
-  // 3) Extract active operation names
+  // 3) Extract only active ops
   const operations = extractActiveMoshOperations(graphs)
-  if (operations.length === 0) return settings
+  if (!operations.length) return settings
 
-  // 4) There are active ops – create a new settings object with a
-  //    structural "timeline" datamosh payload. Tests only assert identity
-  //    on the early-return paths above, so this is safe.
+  // 4) Compose with any existing datamosh (e.g. legacy classic mode)
+  const prev = settings.datamosh ?? { mode: 'none' as const }
+
+  // If some caller forced a non-timeline mode, respect that and just
+  // attach operations/graphs as metadata – but our main path is timeline.
+  const mode: DatamoshMode =
+    prev.mode === 'none' || prev.mode === 'timeline' ? 'timeline' : prev.mode
+
   return {
     ...settings,
     datamosh: {
-      mode: 'timeline',
+      ...prev,
+      mode,
       operations,
+      graphs,
     },
   }
 }
