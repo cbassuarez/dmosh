@@ -7,6 +7,7 @@ This repository scaffolds a deterministic, typed datamoshing editor that ships a
 - Operation precedence: `dropKeyframes` → `freezeReference` → `redirectFrames` → `holdSmear` → `motionVectorTransforms`. Later items in each array win on conflict.
 - Automation parameter ranges: scale `[0,4]`, jitter `[0,1]`, quantize `[0,8]` integer bins, driftX/driftY `[-50,50]` px/frame. Curves reference operations by id and are validated.
 - Masks live in timeline space and quantize to `blockSize`. Keyframes interpolate linearly or stepwise.
+- Optional `moshGraph` carries structured mosh nodes/edges. Primitive/composite ids live in `src/mosh/ops/types.ts`; graph shapes live in `src/mosh/graph/types.ts` and back the UI node grid.
 
 ## Engine pipeline
 1. **Normalize sources** – verify normalized profiles; any `normalizationError` blocks rendering.

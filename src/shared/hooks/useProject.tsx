@@ -21,6 +21,7 @@ import type { RenderSettings } from '../../engine/renderTypes'
 import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerRuntimeSettings, ViewerState } from '../../editor/viewerState'
 import { MobileMode } from '../../editor/mobileTypes'
+import { applyMoshGraphToRenderSettings } from '../../mosh/graph/legacyAdapter'
 
 const STORAGE_KEY = 'datamosh-current-project'
 const EXPORT_PREFS_STORAGE_KEY = 'dmosh_export_prefs'
@@ -193,7 +194,7 @@ const humanizeExportError = (error: string | null | undefined): string | null =>
 
 let untitledCounter = 1
 
-const createEmptyProject = (): Project => ({
+export const createEmptyProject = (): Project => ({
   version: '0.1.0',
   metadata: {
     name: `Untitled Project ${untitledCounter++}`,
@@ -227,6 +228,7 @@ const createEmptyProject = (): Project => ({
     motionVectorTransforms: [],
   },
   automationCurves: [],
+  moshGraph: null,
 })
 
 const isProject = (value: unknown): value is Project => {
@@ -272,6 +274,11 @@ const stripTransientSourceUrls = (project: Project): Project => ({
 })
 
 const shortHash = (hash: string) => `${hash.slice(0, 8)}…${hash.slice(-4)}`
+
+const ensureMoshGraph = (project: Project): Project => ({
+  ...project,
+  moshGraph: project.moshGraph ?? null,
+})
 
 const computeHash = async (file: File) => {
   const buffer = await file.arrayBuffer()
@@ -322,7 +329,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
   const save = useCallback(
     (next: Project | null) => {
       if (next) {
-        const normalized = ensureSourcePreviewUrls(ensureVideoTracks(next))
+        const normalized = ensureMoshGraph(ensureSourcePreviewUrls(ensureVideoTracks(next)))
         normalized.sources.forEach((source) => {
           if (source.previewUrl?.startsWith('blob:')) {
             sessionPreviewUrlsRef.current.add(source.previewUrl)
@@ -348,7 +355,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       if (!stored) return
       const parsed = JSON.parse(stored)
       if (isProject(parsed)) {
-        setProject(ensureSourcePreviewUrls(ensureVideoTracks(stripTransientSourceUrls(parsed))))
+        setProject(ensureMoshGraph(ensureSourcePreviewUrls(ensureVideoTracks(stripTransientSourceUrls(parsed)))))
       }
     } catch (err) {
       console.error(err)
@@ -424,7 +431,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
         setError(null)
         cleanupSourcePreviewUrls(project, sessionPreviewUrlsRef.current)
         sourceFileMapRef.current.clear()
-        save(stripTransientSourceUrls(parsed))
+        save(ensureMoshGraph(stripTransientSourceUrls(parsed)))
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to parse project file'
         setError(message)
@@ -946,6 +953,14 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       const job = renderQueueRef.current.find((entry) => entry.id === id)
       if (!job) return
 
+      const effectiveSettings = applyMoshGraphToRenderSettings(project.moshGraph ?? null, job.settings)
+
+      if (effectiveSettings !== job.settings) {
+        updateRenderQueueState((prev) =>
+          prev.map((entry) => (entry.id === id ? { ...entry, settings: effectiveSettings } : entry)),
+        )
+      }
+
       if (job.status === 'rendering' && renderJobPollersRef.current.has(id)) {
         return
       }
@@ -997,11 +1012,11 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       try {
         await ensureSourcesUploaded({
           project,
-          settings: job.settings,
+          settings: effectiveSettings,
           getSourceFile,
           updateSource,
         })
-        const response = await postExportJob(project, job.settings)
+        const response = await postExportJob(project, effectiveSettings)
         remoteJobId = response.jobId
 
         updateRenderQueueState((prev) =>
@@ -1023,7 +1038,7 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
           console.error('[dmosh] renderJob: FAILED to start', {
             jobId: job.id,
             projectId: (project as { id?: string }).id ?? null,
-            fileName: job.settings.fileName,
+            fileName: effectiveSettings.fileName,
             error: err,
             message,
           })

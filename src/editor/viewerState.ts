@@ -20,4 +20,6 @@ export interface ViewerState {
 
 export interface ViewerRuntimeSettings {
   previewMaxHeight?: number
+  /** When true, preview ignores mosh graphs for playback. */
+  bypassMosh?: boolean
 }

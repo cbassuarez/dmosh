@@ -1,1 +1,1 @@
-export type MobileMode = 'project' | 'edit' | 'ops' | 'export'
+export type MobileMode = 'project' | 'edit' | 'mosh' | 'export'

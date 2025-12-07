@@ -289,6 +289,7 @@ const Viewer = ({ project }: Props) => {
     setViewerMode,
     setViewerResolution,
     setViewerOverlays,
+    setViewerRuntimeSettings,
     setPlayState,
     setTimelineFrame,
   } = useProject()
@@ -300,6 +301,7 @@ const Viewer = ({ project }: Props) => {
   )
   const timelineLastFrame = useMemo(() => timelineEndFrame(project.timeline), [project.timeline])
   const playbackLabel = transport.playState === 'playing' ? 'Playing' : transport.playState === 'paused' ? 'Paused' : 'Stopped'
+  const bypassMosh = viewerRuntimeSettings.bypassMosh ?? false
 
   const step = (delta: number) => {
     setPlayState('paused')
@@ -389,6 +391,14 @@ const Viewer = ({ project }: Props) => {
             </select>
             <span className="rounded-full bg-surface-100/40 px-2 py-[2px] text-[11px] text-slate-300">{resolutionLabel[viewer.resolution]} res</span>
           </div>
+          <label className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 text-[11px] text-slate-200">
+            <input
+              type="checkbox"
+              checked={bypassMosh}
+              onChange={(e) => setViewerRuntimeSettings({ bypassMosh: e.target.checked })}
+            />
+            Bypass mosh operations
+          </label>
         </div>
       </div>
 
