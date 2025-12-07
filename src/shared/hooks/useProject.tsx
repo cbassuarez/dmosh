@@ -1066,7 +1066,6 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
             // Always surface backend debug trail to web console while debugging exports
             if (Array.isArray(remote.debug) && remote.debug.length > 0) {
               for (const entry of remote.debug) {
-                // eslint-disable-next-line no-console
                 console.log('[dmosh export debug]', entry.ts, entry.label, entry.payload)
               }
             }
@@ -1074,7 +1073,6 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
             // Optional: leave this gated if you don't want spam in prod,
             // or remove the guard if you want it always visible too.
             // if (import.meta.env.DEV) {
-              // eslint-disable-next-line no-console
               console.log('[dmosh] remote export status', {
                 id: activeRemoteJobId,
                 status: remote.status,
