@@ -1,4 +1,5 @@
 import type { RenderSettings, ContainerFormat } from './renderTypes'
+import type { MoshPipeline } from '../mosh/moshPipeline'
 import type { Project } from './types'
 
 export interface ExportProgressHandlers {
@@ -133,21 +134,35 @@ return 'video/mp4'
 * For now, timeline export uses a lavfi color stub.
 * This gives us a real, non-empty MP4 without implementing full timeline rendering yet.
   */
+  const hasIntraDrop = (pipeline?: MoshPipeline): boolean => {
+    if (!pipeline || pipeline.globalBypass) return false
+    const scope = pipeline.scopes.find((s) => s.scope === 'timeline')
+    if (!scope) return false
+    return scope.chain.some(
+      (node) =>
+        node.enabled && (node.kind === 'DropIntraFrames' || node.kind === 'ClassicDatamosh'),
+    )
+  }
+
   function buildTimelineStubArgs(settings: RenderSettings, outputName: string): string[] {
   const width = settings.width ?? 640
   const height = settings.height ?? 360
   const fps = settings.fps ?? 24
   const durationSeconds = 1
 
-const args: string[] = [
-'-y',
-'-f',
-'lavfi',
-'-i',
-`color=c=black:s=${width}x${height}:r=${fps}:d=${durationSeconds.toFixed(3)}`,
-'-pix_fmt',
-settings.pixelFormat ?? 'yuv420p',
-]
+  const args: string[] = [
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=black:s=${width}x${height}:r=${fps}:d=${durationSeconds.toFixed(3)}`,
+    '-pix_fmt',
+    settings.pixelFormat ?? 'yuv420p',
+  ]
+
+  if (hasIntraDrop(settings.moshPipeline)) {
+    args.push('-g', '9999', '-sc_threshold', '0')
+  }
 
 if (settings.videoCodec === 'h265') {
 args.push('-c:v', 'libx265')

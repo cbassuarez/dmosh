@@ -1,3 +1,5 @@
+import type { MoshPipeline } from '../mosh/moshPipeline'
+
 export type ExportSource =
   | { kind: 'timeline'; inFrame?: number; outFrame?: number }
   | { kind: 'clip'; clipId: string }
@@ -59,6 +61,9 @@ export interface RenderSettings {
   // Performance / preview
   renderResolutionScale: RenderResolutionScale
   previewOnly: boolean
+
+  // Mosh pipeline
+  moshPipeline?: MoshPipeline
 
   // Destination
   fileName: string

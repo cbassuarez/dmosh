@@ -8,6 +8,7 @@ import type {
   MoshScopeId,
 } from '../mosh/moshModel'
 import { DEFAULT_TIMELINE_ID, moshScopeKey } from '../mosh/moshModel'
+import { buildPipelineFromGraphs } from '../mosh/pipelineAdapter'
 import type { RenderSettings } from './renderTypes'
 import type { Project, TimelineClip } from './types'
 
@@ -254,13 +255,20 @@ export const applyMoshGraphsToRenderSettings = (
   project: Project,
   settings: RenderSettings,
 ): RenderSettings => {
-  if (project.moshBypassGlobal) return settings
+  const pipeline = buildPipelineFromGraphs(project.moshGraphsByScopeKey, project.moshBypassGlobal)
 
-  const graphs = collectAllGraphs(project)
-  if (graphs.length === 0) return settings
+  const scopes = pipeline.scopes ?? []
+  const activeOps = scopes
+    .flatMap((scope) => scope.chain)
+    .filter((node) => node.enabled)
+    .map((node) => node.kind)
 
-  const operations = extractActiveMoshOperations(graphs)
-  if (operations.length === 0) return settings
+  const next: RenderSettings = { ...settings, moshPipeline: pipeline }
 
-  return { ...settings, datamosh: { mode: 'timeline', operations } }
+  if (pipeline.globalBypass || scopes.length === 0) return next
+
+  return {
+    ...next,
+    datamosh: activeOps.length > 0 ? { mode: 'timeline', operations: activeOps } : settings.datamosh,
+  }
 }

@@ -12,13 +12,9 @@ import {
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Project, TimelineClip } from '../engine/types'
-import {
-  buildContextForClip,
-  collectGraphsForClip,
-  compileMoshPipelineFromGraphs,
-  extractActiveMoshOperations,
-  type MoshContextFrame,
-} from '../engine/moshPipeline'
+import { applyMoshPipeline, type MoshScopeKind, type StructuralFrame } from '../mosh/moshPipeline'
+import { buildStructuralStreamForClip } from '../mosh/structuralStream'
+import { useCurrentMoshPipeline } from '../mosh/useMoshPipeline'
 import { useProject } from '../shared/hooks/useProject'
 import { getActiveClipAtFrame, timelineEndFrame } from './timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution } from './viewerState'
@@ -127,11 +123,32 @@ const drawGlitchIntensity = (ctx: CanvasRenderingContext2D, width: number, heigh
   ctx.fillRect(0, 0, width, height)
 }
 
+type PreviewFrame = {
+  index: number
+  frameType: StructuralFrame['type']
+  contentFrom: number
+}
+
+const structuralToPreviewFrames = (
+  stream: StructuralFrame[],
+  fallbackRef: number,
+): PreviewFrame[] => {
+  let currentRef = fallbackRef
+  return stream.map((frame) => {
+    if (frame.type === 'I') {
+      currentRef = frame.index
+      return { index: frame.index, frameType: frame.type, contentFrom: frame.index }
+    }
+    const refIndex = frame.refIndices[0] ?? currentRef
+    return { index: frame.index, frameType: frame.type, contentFrom: refIndex }
+  })
+}
+
 const mapTimelineFrameToMoshedFrame = (
-  frames: MoshContextFrame[],
+  frames: PreviewFrame[],
   clipOffset: number,
   clipDuration: number,
-): MoshContextFrame | null => {
+): PreviewFrame | null => {
   if (!frames.length || clipDuration <= 0) return null
   const clampedOffset = Math.max(0, Math.min(clipDuration - 1, clipOffset))
   const denominator = Math.max(1, clipDuration - 1)
@@ -148,16 +165,33 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
 
   const clip = useMemo(() => getActiveClipAtFrame(project, frame), [project, frame])
   const source = useMemo(() => project.sources.find((s) => s.id === clip?.sourceId), [clip?.sourceId, project.sources])
+  const pipeline = useCurrentMoshPipeline()
+  const activeScope = (project.currentMoshScope?.kind ?? 'timeline') as MoshScopeKind
 
-  const moshGraphs = useMemo(() => (clip ? collectGraphsForClip(project, clip) : collectGraphsForClip(project, null)), [clip, project])
-  const compiledPipeline = useMemo(() => compileMoshPipelineFromGraphs(moshGraphs), [moshGraphs])
-  const baseContext = useMemo(() => (clip ? buildContextForClip(clip, project.timeline.fps) : null), [clip, project.timeline.fps])
-  const moshedFrames = useMemo(() => {
-    if (!baseContext) return []
-    const result = compiledPipeline(baseContext)
-    return result.frames
-  }, [baseContext, compiledPipeline])
-  const activeOps = useMemo(() => extractActiveMoshOperations(moshGraphs), [moshGraphs])
+  const baseStructuralStream = useMemo(
+    () => (clip ? buildStructuralStreamForClip(clip, project.timeline.fps) : []),
+    [clip, project.timeline.fps],
+  )
+  const fallbackRef = useMemo(
+    () => baseStructuralStream.find((f) => f.type === 'I')?.index ?? 0,
+    [baseStructuralStream],
+  )
+  const baseFrames = useMemo(
+    () => structuralToPreviewFrames(baseStructuralStream, fallbackRef),
+    [baseStructuralStream, fallbackRef],
+  )
+  const moshedStructuralStream = useMemo(
+    () => applyMoshPipeline(baseStructuralStream, pipeline, activeScope),
+    [activeScope, baseStructuralStream, pipeline],
+  )
+  const moshedFrames = useMemo(
+    () => structuralToPreviewFrames(moshedStructuralStream, fallbackRef),
+    [fallbackRef, moshedStructuralStream],
+  )
+  const activeOps = useMemo(() => {
+    const scopePipe = pipeline?.scopes.find((s) => s.scope === activeScope)
+    return scopePipe?.chain.filter((node) => node.enabled).map((node) => node.kind) ?? []
+  }, [activeScope, pipeline])
   const clipDuration = useMemo(() => (clip ? Math.max(0, clip.endFrame - clip.startFrame) : 0), [clip])
   const shouldBypassMosh = (project.moshBypassGlobal ?? false) || (bypassMosh ?? false)
 
@@ -171,7 +205,7 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
     if (!videoRef.current || !clip || !safePreviewUrl) return
     const clipOffset = frame - clip.timelineStartFrame
     const clipLocalFrame = clip.startFrame + clipOffset
-    const targetFrames = kind === 'moshed' && !shouldBypassMosh ? moshedFrames : baseContext?.frames ?? []
+    const targetFrames = kind === 'moshed' && !shouldBypassMosh ? moshedFrames : baseFrames
     const mappedFrame = mapTimelineFrameToMoshedFrame(targetFrames, clipOffset, clipDuration)
     const mappedLocalFrame = mappedFrame?.contentFrom ?? clipLocalFrame
     const timeSeconds = mappedLocalFrame / project.timeline.fps
@@ -184,7 +218,7 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
       }
     }
   }, [
-    baseContext?.frames,
+    baseFrames,
     clip,
     clipDuration,
     frame,
