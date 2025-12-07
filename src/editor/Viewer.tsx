@@ -19,7 +19,7 @@ import {
   extractActiveMoshOperations,
   type MoshContextFrame,
 } from '../engine/moshPipeline'
-import { applyMoshNodes, buildStructuralStream } from '../mosh/moshEngine'
+import { getMoshFrameIndexMapping } from './moshPlayback'
 import type { MoshNode, MoshScopeId } from '../mosh/moshModel'
 import { useProject } from '../shared/hooks/useProject'
 import { getActiveClipAtFrame, timelineEndFrame } from './timelineUtils'
@@ -169,6 +169,7 @@ const VideoViewport = ({
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
+  void moshScope
 
   const clip = useMemo(() => getActiveClipAtFrame(project, frame), [project, frame])
   const source = useMemo(() => project.sources.find((s) => s.id === clip?.sourceId), [clip?.sourceId, project.sources])
@@ -176,29 +177,28 @@ const VideoViewport = ({
   const moshGraphs = useMemo(() => (clip ? collectGraphsForClip(project, clip) : collectGraphsForClip(project, null)), [clip, project])
   const compiledPipeline = useMemo(() => compileMoshPipelineFromGraphs(moshGraphs), [moshGraphs])
   const baseContext = useMemo(() => (clip ? buildContextForClip(clip, project.timeline.fps) : null), [clip, project.timeline.fps])
+  const shouldApplyMoshPlayback =
+    kind === 'moshed' && moshEnabled && !(project.moshBypassGlobal ?? false) && !bypassMosh
+
   const moshedFrames = useMemo(() => {
     if (!baseContext) return []
 
-    const shouldUseStructuralMosh =
-      kind === 'moshed' && moshEnabled && !(project.moshBypassGlobal ?? false) && !bypassMosh
-
-    if (shouldUseStructuralMosh && moshNodes && moshNodes.length > 0) {
-      const scopeKey = moshScope
-        ? `${moshScope.kind}:${moshScope.timelineId}:${moshScope.trackId ?? ''}:${moshScope.clipId ?? ''}`
-        : 'global'
-      void scopeKey
-      const structural = buildStructuralStream(baseContext.frames.length)
-      const moshedStructural = applyMoshNodes(structural, moshNodes)
-      return moshedStructural.map((frame) => ({
-        index: frame.index,
-        frameType: frame.type,
-        contentFrom: frame.index,
-      }))
+    if (shouldApplyMoshPlayback && moshNodes && moshNodes.length > 0) {
+      const mapping = getMoshFrameIndexMapping(baseContext.frames.length, shouldApplyMoshPlayback, moshNodes)
+      if (mapping.length === 0) return []
+      return mapping
+        .map((frameIndex) => baseContext.frames[Math.min(baseContext.frames.length - 1, frameIndex)])
+        .filter(Boolean)
     }
 
     const result = compiledPipeline(baseContext)
     return result.frames
-  }, [baseContext, bypassMosh, compiledPipeline, kind, moshEnabled, moshNodes, moshScope, project.moshBypassGlobal])
+  }, [
+    baseContext,
+    compiledPipeline,
+    moshNodes,
+    shouldApplyMoshPlayback,
+  ])
   const activeOps = useMemo(() => {
     if (moshNodes) {
       return moshNodes.filter((node) => !node.bypass).map((node) => node.op)
