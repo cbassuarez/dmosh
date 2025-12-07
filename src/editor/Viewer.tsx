@@ -12,6 +12,13 @@ import {
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Project, TimelineClip } from '../engine/types'
+import {
+  buildContextForClip,
+  collectGraphsForClip,
+  compileMoshPipelineFromGraphs,
+  extractActiveMoshOperations,
+  type MoshContextFrame,
+} from '../engine/moshPipeline'
 import { useProject } from '../shared/hooks/useProject'
 import { getActiveClipAtFrame, timelineEndFrame } from './timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution } from './viewerState'
@@ -60,6 +67,7 @@ interface VideoViewportProps {
   resolution: ViewerResolution
   overlays: ViewerOverlays
   previewMaxHeight?: number
+  bypassMosh?: boolean
 }
 
 const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -119,7 +127,20 @@ const drawGlitchIntensity = (ctx: CanvasRenderingContext2D, width: number, heigh
   ctx.fillRect(0, 0, width, height)
 }
 
-const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxHeight }: VideoViewportProps) => {
+const mapTimelineFrameToMoshedFrame = (
+  frames: MoshContextFrame[],
+  clipOffset: number,
+  clipDuration: number,
+): MoshContextFrame | null => {
+  if (!frames.length || clipDuration <= 0) return null
+  const clampedOffset = Math.max(0, Math.min(clipDuration - 1, clipOffset))
+  const denominator = Math.max(1, clipDuration - 1)
+  const ratio = denominator === 0 ? 0 : clampedOffset / denominator
+  const targetIndex = Math.min(frames.length - 1, Math.round(ratio * Math.max(frames.length - 1, 0)))
+  return frames[targetIndex] ?? null
+}
+
+const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxHeight, bypassMosh }: VideoViewportProps) => {
   const { isPreviewUrlActive } = useProject()
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -127,6 +148,18 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
 
   const clip = useMemo(() => getActiveClipAtFrame(project, frame), [project, frame])
   const source = useMemo(() => project.sources.find((s) => s.id === clip?.sourceId), [clip?.sourceId, project.sources])
+
+  const moshGraphs = useMemo(() => (clip ? collectGraphsForClip(project, clip) : collectGraphsForClip(project, null)), [clip, project])
+  const compiledPipeline = useMemo(() => compileMoshPipelineFromGraphs(moshGraphs), [moshGraphs])
+  const baseContext = useMemo(() => (clip ? buildContextForClip(clip, project.timeline.fps) : null), [clip, project.timeline.fps])
+  const moshedFrames = useMemo(() => {
+    if (!baseContext) return []
+    const result = compiledPipeline(baseContext)
+    return result.frames
+  }, [baseContext, compiledPipeline])
+  const activeOps = useMemo(() => extractActiveMoshOperations(moshGraphs), [moshGraphs])
+  const clipDuration = useMemo(() => (clip ? Math.max(0, clip.endFrame - clip.startFrame) : 0), [clip])
+  const shouldBypassMosh = (project.moshBypassGlobal ?? false) || (bypassMosh ?? false)
 
   const previewUrl = source?.previewUrl
   const safePreviewUrl =
@@ -138,7 +171,10 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
     if (!videoRef.current || !clip || !safePreviewUrl) return
     const clipOffset = frame - clip.timelineStartFrame
     const clipLocalFrame = clip.startFrame + clipOffset
-    const timeSeconds = clipLocalFrame / project.timeline.fps
+    const targetFrames = kind === 'moshed' && !shouldBypassMosh ? moshedFrames : baseContext?.frames ?? []
+    const mappedFrame = mapTimelineFrameToMoshedFrame(targetFrames, clipOffset, clipDuration)
+    const mappedLocalFrame = mappedFrame?.contentFrom ?? clipLocalFrame
+    const timeSeconds = mappedLocalFrame / project.timeline.fps
     const video = videoRef.current
     if (Number.isFinite(timeSeconds) && Math.abs(video.currentTime - timeSeconds) > 1 / project.timeline.fps) {
       try {
@@ -147,7 +183,17 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
         /* noop */
       }
     }
-  }, [clip, frame, project.timeline.fps, safePreviewUrl])
+  }, [
+    baseContext?.frames,
+    clip,
+    clipDuration,
+    frame,
+    kind,
+    moshedFrames,
+    project.timeline.fps,
+    safePreviewUrl,
+    shouldBypassMosh,
+  ])
 
   useEffect(() => {
     const canvas = overlayRef.current
@@ -220,6 +266,22 @@ const VideoViewport = ({ kind, project, frame, resolution, overlays, previewMaxH
         className="h-full w-full bg-black object-contain"
       />
       <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+      {kind === 'moshed' && (
+        <div className="pointer-events-none absolute left-3 top-3 flex max-w-[60%] flex-col gap-1 text-[11px] text-white">
+          <span className="inline-flex items-center gap-2 rounded-full bg-surface-900/80 px-3 py-[6px] font-mono uppercase tracking-[0.12em] text-slate-100">
+            {shouldBypassMosh
+              ? 'Mosh bypassed'
+              : activeOps.length > 0
+                ? `Mosh pipeline: ${activeOps.join(' · ')}`
+                : 'Mosh pipeline: none'}
+          </span>
+          {shouldBypassMosh && (
+            <span className="rounded-full bg-amber-500/80 px-3 py-[6px] font-mono uppercase tracking-[0.12em] text-surface-900">
+              Global or viewer bypass is enabled
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -230,12 +292,14 @@ const CompareView = ({
   resolution,
   overlays,
   previewMaxHeight,
+  bypassMosh,
 }: {
   project: Project
   frame: number
   resolution: ViewerResolution
   overlays: ViewerOverlays
   previewMaxHeight?: number
+  bypassMosh: boolean
 }) => (
   <div className="grid h-full grid-cols-2 gap-[1px] bg-surface-900">
     <VideoViewport
@@ -253,6 +317,7 @@ const CompareView = ({
       resolution={resolution}
       overlays={overlays}
       previewMaxHeight={previewMaxHeight}
+      bypassMosh={bypassMosh}
     />
   </div>
 )
@@ -411,6 +476,7 @@ const Viewer = ({ project }: Props) => {
               resolution={viewer.resolution}
               overlays={viewer.overlays}
               previewMaxHeight={viewerRuntimeSettings.previewMaxHeight}
+              bypassMosh={bypassMosh || (project.moshBypassGlobal ?? false)}
             />
           )}
           {viewer.mode === 'original' && (
@@ -431,6 +497,7 @@ const Viewer = ({ project }: Props) => {
               resolution={viewer.resolution}
               overlays={viewer.overlays}
               previewMaxHeight={viewerRuntimeSettings.previewMaxHeight}
+              bypassMosh={bypassMosh || (project.moshBypassGlobal ?? false)}
             />
           )}
           {!activeClip && (
