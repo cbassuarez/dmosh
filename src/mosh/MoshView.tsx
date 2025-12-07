@@ -179,12 +179,15 @@ const MoshView = () => {
           </div>
           <Viewer project={project} />
         </div>
-        <MoshGraphView
-          graph={graph}
-            onUpdateGraph={(updater) => updateMoshGraph(activeScope, updater)}
-          onSelectNode={setSelectedNodeId}
-          selectedNodeId={selectedNodeId}
-        />
+          {/* Let the graph occupy the remaining vertical space in the middle column */}
+                  <div className="flex-1 min-h-0">
+                    <MoshGraphView
+                      graph={graph}
+                      onUpdateGraph={(updater) => updateMoshGraph(activeScope, updater)}
+                      onSelectNode={setSelectedNodeId}
+                      selectedNodeId={selectedNodeId}
+                    />
+                  </div>
       </div>
       <div className="w-full shrink-0 lg:w-[320px]">
         <MoshSidePanel selectedNode={selectedNode} onAddNode={handleAddNode} onUpdateNode={handleUpdateNode} />

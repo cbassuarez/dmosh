@@ -32,14 +32,55 @@ export function buildStructuralStream(frameCount: number): StructuralStream {
   return stream
 }
 
+export interface MoshTransformOptions {
+  /**
+   * Enable debug logging for development. When true, we log a small
+   * summary of the structural stream and nodes whenever the transform
+   * is invoked.
+   */
+  debug?: boolean
+}
+
 /**
- * Apply the Mosh node pipeline to the structural stream.
- * This is the minimal, visible MVP:
- * - DropIntraFrames
- * - DropPredictedFrames
- * - ClassicDatamosh (reuses DropIntraFrames behavior)
+ * Central entry point for applying the current mosh node graph to a
+ * structural stream. For Pass B, this is intentionally a no-op so
+ * that the UI cannot change playback behavior yet.
  *
- * All other ops are treated as pass-through.
+ * When you're ready to make nodes "do something", you can switch the
+ * implementation here to call `applyMoshNodes(stream, nodes)` or a
+ * more sophisticated pipeline.
+ */
+export function transformStructuralStreamWithGraph(
+  stream: StructuralStream,
+  nodes: MoshNode[] | null | undefined,
+  options?: MoshTransformOptions,
+): StructuralStream {
+  const effectiveNodes = nodes ?? []
+
+  if (options?.debug) {
+    // Keep logging lightweight: summarize rather than dumping everything.
+    // eslint-disable-next-line no-console
+    console.debug('[dmosh] transformStructuralStreamWithGraph', {
+      frameCount: stream.length,
+      nodeCount: effectiveNodes.length,
+      nodeOps: effectiveNodes.map((n) => n.op),
+    })
+  }
+
+  // Pass B: explicit no-op. All nodes are visual-only for now.
+  return stream
+}
+
+/**
+ * Low-level implementation of frame transforms for various mosh nodes.
+ *
+ * NOTE: This is *not* used by the playback path yet. The only function
+ * that should be called from Viewer / render code in Pass B/C is
+ * `transformStructuralStreamWithGraph`, which currently returns the
+ * original stream unchanged.
+ *
+ * When you're ready to actually wire mosh into playback, you can have
+ * `transformStructuralStreamWithGraph` delegate into this function.
  */
 export function applyMoshNodes(stream: StructuralStream, nodes: MoshNode[]): StructuralStream {
   if (!nodes || nodes.length === 0) return stream
