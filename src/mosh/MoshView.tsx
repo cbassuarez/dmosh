@@ -172,7 +172,12 @@ const MoshView = () => {
               Bypass Mosh
             </label>
           </div>
-          <Viewer project={project} />
+          <Viewer
+            project={project}
+            moshEnabled={!(project.moshBypassGlobal ?? false)}
+            moshScope={activeScope}
+            moshNodes={graph.nodes}
+          />
         </div>
         <MoshGraphView
           graph={graph}
