@@ -1060,7 +1060,6 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
           const remote = await getExportStatus(activeRemoteJobId)
           if (import.meta.env.DEV && Array.isArray(remote.debug) && remote.debug.length > 0) {
             for (const entry of remote.debug) {
-              // eslint-disable-next-line no-console
               console.log('[dmosh export debug]', entry.ts, entry.label, entry.payload)
             }
           }
