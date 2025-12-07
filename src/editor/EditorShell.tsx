@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Download, FolderDown, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus } from 'lucide-react'
 import { motion as motionTokens } from '../shared/theme'
@@ -16,6 +17,18 @@ import { timelineEndFrame } from './timelineUtils'
 import RenderQueuePanel from './RenderQueuePanel'
 import MobileEditorLayout from './MobileEditorLayout'
 import MoshView from '../mosh/MoshView'
+import type { Project } from '../engine/types'
+
+type WorkspaceTab = 'edit' | 'mosh' | 'export'
+
+type EditWorkspaceViewProps = {
+  project: Project
+  activeTab: Extract<WorkspaceTab, 'edit' | 'export'>
+  containerRef: React.RefObject<HTMLDivElement>
+  sizes: { left: number; right: number; center: number }
+  open: { left: boolean; right: boolean }
+  onStartResize: Dispatch<SetStateAction<null | 'left' | 'right'>>
+}
 
 const MIN_PANEL_WIDTH = 220
 
@@ -37,6 +50,82 @@ const handleResize = (
   return { left: current.left, right: next, center }
 }
 
+const EditWorkspaceView = ({
+  project,
+  activeTab,
+  containerRef,
+  sizes,
+  open,
+  onStartResize,
+}: EditWorkspaceViewProps) => {
+  const renderTabContent = () => {
+    if (activeTab === 'edit') {
+      return (
+        <>
+          <Viewer project={project} />
+          <Timeline project={project} />
+        </>
+      )
+    }
+
+    return (
+      <>
+        <Viewer project={project} />
+        <div className="rounded-xl border border-dashed border-surface-300/60 bg-surface-200/60 p-6 text-sm text-slate-300">
+          Configure export settings in the Export panel. The render queue remains available in the inspector column.
+        </div>
+      </>
+    )
+  }
+
+  return (
+    <div ref={containerRef} className="flex min-h-[70vh] gap-3">
+      <AnimatePresence initial={false}>
+        {open.left && (
+          <motion.aside
+            key="left"
+            initial={{ x: -16, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -24, opacity: 0 }}
+            transition={{ duration: motionTokens.medium.duration }}
+            className="relative shrink-0 overflow-hidden rounded-xl border border-surface-300/60 bg-surface-200/80"
+            style={{ width: sizes.left }}
+          >
+            <ProjectPanel project={project} />
+            <div className="absolute right-0 top-0 h-full w-2 cursor-col-resize" onMouseDown={() => onStartResize('left')} />
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      <div className="flex flex-1 flex-col gap-3" style={{ minWidth: sizes.center }}>
+        {renderTabContent()}
+      </div>
+
+      <AnimatePresence initial={false}>
+        {open.right && (
+          <motion.aside
+            key="right"
+            initial={{ x: 16, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 24, opacity: 0 }}
+            transition={{ duration: motionTokens.medium.duration }}
+            className="relative shrink-0 overflow-hidden rounded-xl border border-surface-300/60 bg-surface-200/80"
+            style={{ width: sizes.right }}
+          >
+            <div className="flex h-full flex-col overflow-y-auto">
+              <Inspector project={project} />
+              <div className="border-t border-surface-300/60">
+                <RenderQueuePanel />
+              </div>
+            </div>
+            <div className="absolute left-0 top-0 h-full w-2 cursor-col-resize" onMouseDown={() => onStartResize('right')} />
+          </motion.aside>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 type Props = {
   onOpenNewProject: () => void
 }
@@ -47,7 +136,7 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
   const [open, setOpen] = useState({ left: true, right: true })
   const [sizes, setSizes] = useState({ left: 280, right: 320, center: 720 })
   const [showExport, setShowExport] = useState(false)
-  const [activeTab, setActiveTab] = useState<'edit' | 'mosh' | 'export'>('edit')
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('edit')
 
   const { project, exportProject, importSources, transport, setPlayState, setTimelineFrame } = useProject()
   const { status } = useEngine()
@@ -117,36 +206,12 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
 
   if (!project) return null
 
-  const handleTabChange = (tab: 'edit' | 'mosh' | 'export') => {
+  const handleTabChange = (tab: WorkspaceTab) => {
     setActiveTab(tab)
     setShowExport(tab === 'export')
   }
 
-  const renderTabContent = () => {
-    if (activeTab === 'edit') {
-      return (
-        <>
-          <Viewer project={project} />
-          <Timeline project={project} />
-        </>
-      )
-    }
-
-    if (activeTab === 'mosh') {
-      return <MoshView />
-    }
-
-    return (
-      <>
-        <Viewer project={project} />
-        <div className="rounded-xl border border-dashed border-surface-300/60 bg-surface-200/60 p-6 text-sm text-slate-300">
-          Configure export settings in the Export panel. The render queue remains available in the inspector column.
-        </div>
-      </>
-    )
-  }
-
-  const workspaceTabs: { id: 'edit' | 'mosh' | 'export'; label: string }[] = [
+  const workspaceTabs: { id: WorkspaceTab; label: string }[] = [
     { id: 'edit', label: 'Edit' },
     { id: 'mosh', label: 'Mosh' },
     { id: 'export', label: 'Export' },
@@ -199,95 +264,67 @@ const DesktopEditorLayout = ({ onOpenNewProject }: Props) => {
           }}
         />
       </div>
-      <div ref={containerRef} className="flex min-h-[70vh] gap-3">
-        <AnimatePresence initial={false}>
-          {open.left && (
-            <motion.aside
-              key="left"
-              initial={{ x: -16, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -24, opacity: 0 }}
-              transition={{ duration: motionTokens.medium.duration }}
-              className="relative shrink-0 overflow-hidden rounded-xl border border-surface-300/60 bg-surface-200/80"
-              style={{ width: sizes.left }}
-            >
-              <ProjectPanel project={project} />
-              <div
-                className="absolute right-0 top-0 h-full w-2 cursor-col-resize"
-                onMouseDown={() => setDragging('left')}
-              />
-            </motion.aside>
-          )}
-        </AnimatePresence>
-
-        <div className="flex flex-1 flex-col gap-3" style={{ minWidth: sizes.center }}>
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+        {activeTab !== 'mosh' ? (
+          <button
+            onClick={() => setOpen((v) => ({ ...v, left: !v.left }))}
+            className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
+          >
+            {open.left ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+            {open.left ? 'Hide project' : 'Show project'}
+          </button>
+        ) : (
+          <span />
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {workspaceTabs.map((tab) => (
             <button
-              onClick={() => setOpen((v) => ({ ...v, left: !v.left }))}
-              className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id)}
+              className={`rounded px-3 py-[6px] text-xs uppercase tracking-[0.12em] ${
+                tab.id === activeTab
+                  ? 'bg-accent text-black shadow'
+                  : 'border border-surface-300/60 text-slate-200 hover:border-accent/70'
+              }`}
             >
-              {open.left ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-              {open.left ? 'Hide project' : 'Show project'}
+              {tab.label}
             </button>
-            <div className="flex flex-wrap items-center gap-2">
-              {workspaceTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => handleTabChange(tab.id)}
-                  className={`rounded px-3 py-[6px] text-xs uppercase tracking-[0.12em] ${
-                    tab.id === activeTab
-                      ? 'bg-accent text-black shadow'
-                      : 'border border-surface-300/60 text-slate-200 hover:border-accent/70'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-              <MaskTools />
-            </div>
-            <button
-              onClick={() => setOpen((v) => ({ ...v, right: !v.right }))}
-              className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
-            >
-              {open.right ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-              {open.right ? 'Hide inspector' : 'Show inspector'}
-            </button>
-          </div>
-          {renderTabContent()}
+          ))}
+          <MaskTools />
         </div>
-
-        <AnimatePresence initial={false}>
-          {open.right && (
-            <motion.aside
-              key="right"
-              initial={{ x: 16, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 24, opacity: 0 }}
-              transition={{ duration: motionTokens.medium.duration }}
-              className="relative shrink-0 overflow-hidden rounded-xl border border-surface-300/60 bg-surface-200/80"
-              style={{ width: sizes.right }}
-            >
-              <div className="flex h-full flex-col overflow-y-auto">
-                <Inspector project={project} />
-                <div className="border-t border-surface-300/60">
-                  <RenderQueuePanel />
-                </div>
-              </div>
-              <div
-                className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
-                onMouseDown={() => setDragging('right')}
-              />
-            </motion.aside>
-          )}
-        </AnimatePresence>
-        {project && (
-          <ExportDialog
-            project={project}
-            isOpen={showExport || activeTab === 'export'}
-            onClose={() => handleTabChange('edit')}
-          />
+        {activeTab !== 'mosh' ? (
+          <button
+            onClick={() => setOpen((v) => ({ ...v, right: !v.right }))}
+            className="flex items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 transition hover:border-accent/70 hover:text-white"
+          >
+            {open.right ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+            {open.right ? 'Hide inspector' : 'Show inspector'}
+          </button>
+        ) : (
+          <span />
         )}
       </div>
+
+      {activeTab === 'mosh' ? (
+        <MoshView />
+      ) : (
+        <EditWorkspaceView
+          project={project}
+          activeTab={activeTab}
+          containerRef={containerRef}
+          sizes={sizes}
+          open={open}
+          onStartResize={setDragging}
+        />
+      )}
+
+      {project && (
+        <ExportDialog
+          project={project}
+          isOpen={showExport || activeTab === 'export'}
+          onClose={() => handleTabChange('edit')}
+        />
+      )}
     </div>
   )
 }
