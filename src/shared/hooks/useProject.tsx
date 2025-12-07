@@ -478,40 +478,59 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
     [project, save],
   )
 
-  const importSources = useCallback(
-    async (files: File[]) => {
-      if (!project) return
-      const newSources: Source[] = []
-      for (const file of files) {
-        const projectedDuration = project.settings.fps * 10
-        const seconds = projectedDuration / project.settings.fps
-        if (seconds > 60) {
-          const proceed = window.confirm('This clip is longer than 60 seconds; performance may be degraded. Continue?')
-          if (!proceed) continue
+    const importSources = useCallback(
+      async (files: File[]) => {
+        if (!project) return
+        const newSources: Source[] = []
+
+        for (const file of files) {
+          const projectedDuration = project.settings.fps * 10
+          const seconds = projectedDuration / project.settings.fps
+          if (seconds > 60) {
+            const proceed = window.confirm(
+              'This clip is longer than 60 seconds; performance may be degraded. Continue?',
+            )
+            if (!proceed) continue
+          }
+
+          const hash = await computeHash(file)
+
+          // 🔧 NEW: if we already have a source with this hash, just relink the file
+          const existing =
+            project.sources.find((s) => s.hash === hash) ||
+            newSources.find((s) => s.hash === hash)
+
+          if (existing) {
+            // Re-associate this File with the existing Source so exports can find it
+            sourceFileMapRef.current.set(existing.id, file)
+            // Optionally, you could refresh previewUrl here if you ever need to.
+            continue
+          }
+
+          const id = `src-${project.sources.length + newSources.length + 1}`
+          sourceFileMapRef.current.set(id, file)
+
+          newSources.push({
+            id,
+            originalName: file.name,
+            hash,
+            audioPresent: false,
+            pixelFormat: 'unknown',
+            durationFrames: projectedDuration,
+            previewUrl: (() => {
+              const url = URL.createObjectURL(file)
+              sessionPreviewUrlsRef.current.add(url)
+              return url
+            })(),
+            thumbnailUrl: undefined,
+          })
         }
-        const hash = await computeHash(file)
-        const id = `src-${project.sources.length + newSources.length + 1}`
-        sourceFileMapRef.current.set(id, file)
-        newSources.push({
-          id,
-          originalName: file.name,
-          hash,
-          audioPresent: false,
-          pixelFormat: 'unknown',
-          durationFrames: projectedDuration,
-          previewUrl: (() => {
-            const url = URL.createObjectURL(file)
-            sessionPreviewUrlsRef.current.add(url)
-            return url
-          })(),
-          thumbnailUrl: undefined,
-        })
-      }
-      if (!newSources.length) return
-      save({ ...project, sources: [...project.sources, ...newSources] })
-    },
-    [project, save],
-  )
+
+        if (!newSources.length) return
+        save({ ...project, sources: [...project.sources, ...newSources] })
+      },
+      [project, save],
+    )
 
   const placeClipFromSource = useCallback(
     (sourceId: string, timelineFrame: number, trackId?: string) => {
