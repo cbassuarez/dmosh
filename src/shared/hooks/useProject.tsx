@@ -19,6 +19,7 @@ import {
 import { postExportJob, getExportStatus, downloadExport } from '../exportApi'
 import { ensureSourcesUploaded } from '../exportMedia'
 import type { RenderSettings } from '../../engine/renderTypes'
+import { applyMoshGraphsToRenderSettings } from '../../engine/moshPipeline'
 import { deleteTrackAndClips, hasOverlapOnTrack, reorderTracks, timelineEndFrame } from '../../editor/timelineUtils'
 import { ViewerMode, ViewerOverlays, ViewerResolution, ViewerRuntimeSettings, ViewerState } from '../../editor/viewerState'
 import { MobileMode } from '../../editor/mobileTypes'
@@ -1009,7 +1010,8 @@ export const ProjectProvider = ({ children }: PropsWithChildren) => {
       const job = renderQueueRef.current.find((entry) => entry.id === id)
       if (!job) return
 
-      const effectiveSettings = applyMoshGraphToRenderSettings(project.moshGraph ?? null, job.settings)
+      const withStructuredGraphs = applyMoshGraphsToRenderSettings(project, job.settings)
+      const effectiveSettings = applyMoshGraphToRenderSettings(project.moshGraph ?? null, withStructuredGraphs)
 
       if (effectiveSettings !== job.settings) {
         updateRenderQueueState((prev) =>
