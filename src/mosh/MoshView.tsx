@@ -68,7 +68,9 @@ const MoshScopeSidebar = ({
                           ? 'border border-accent bg-accent/10 text-white'
                           : 'border border-transparent text-slate-200'
                       }`}
-                      onClick={() => onScopeChange({ kind: 'clip', timelineId, trackId: track.id, clipId: clip.id })}
+                      onClick={() =>
+                        onScopeChange({ kind: 'clip', timelineId, trackId: track.id, clipId: clip.id })
+                      }
                     >
                       Clip {clip.id}
                     </button>
@@ -97,50 +99,56 @@ const MoshView = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
 
   const timelineId = project?.timeline.id ?? DEFAULT_TIMELINE_ID
+
   const activeScope = useMemo<MoshScopeId>(
     () => currentMoshScope ?? { kind: 'timeline', timelineId },
     [currentMoshScope, timelineId],
   )
-    const scopeKey = useMemo(() => moshScopeKey(activeScope), [activeScope])
-    useEffect(() => setSelectedNodeId(null), [scopeKey])
 
-    // Always compute the latest graph for the current scope so UI stays in sync
-    // with mosh graph updates (no memoization here).
-    const graph: MoshGraph = project
-      ? getMoshGraphForScope(activeScope)
-      : createEmptyMoshGraph(activeScope)
+  const scopeKey = useMemo(() => moshScopeKey(activeScope), [activeScope])
 
+  // Reset node selection when scope changes
+  useEffect(() => {
+    setSelectedNodeId(null)
+  }, [scopeKey])
 
+  // Ensure there's always a graph for the active scope
   useEffect(() => {
     if (!project) return
     const hasGraph = project.moshGraphsByScopeKey && project.moshGraphsByScopeKey[scopeKey]
     if (!hasGraph) {
-      updateMoshGraph(activeScope, () => graph)
+      updateMoshGraph(activeScope, () => createEmptyMoshGraph(activeScope))
     }
-  }, [activeScope, graph, project, scopeKey, updateMoshGraph])
+  }, [activeScope, project, scopeKey, updateMoshGraph])
+
+  // Always compute the latest graph for the current scope so UI stays in sync
+  const graph: MoshGraph = project
+    ? getMoshGraphForScope(activeScope)
+    : createEmptyMoshGraph(activeScope)
 
   const selectedNode = graph.nodes.find((node) => node.id === selectedNodeId) ?? null
 
   if (!project) return null
 
-      const handleAddNode = (op: MoshOperationType) => {
-        // per-scope "add-or-select" semantics.
-        // If a node with this operation already exists in the active scope,
-        // just select it instead of creating a duplicate.
-        const existing = graph.nodes.find((node) => node.op === op)
-        if (existing) {
-          setSelectedNodeId(existing.id)
-          return
-        }
+  const globalBypass = project.moshBypassGlobal ?? false
 
-        const node = createDefaultNode(op)
-        updateMoshGraph(activeScope, (prev) => ({
-          ...prev,
-          nodes: [...prev.nodes, node],
-        }))
-        setSelectedNodeId(node.id)
-      }
+  const handleAddNode = (op: MoshOperationType) => {
+    // Per-scope "add-or-select" semantics:
+    // If a node with this operation already exists in the active scope,
+    // just select it instead of creating a duplicate.
+    const existing = graph.nodes.find((node) => node.op === op)
+    if (existing) {
+      setSelectedNodeId(existing.id)
+      return
+    }
 
+    const node = createDefaultNode(op)
+    updateMoshGraph(activeScope, (prev) => ({
+      ...prev,
+      nodes: [...prev.nodes, node],
+    }))
+    setSelectedNodeId(node.id)
+  }
 
   const handleUpdateNode = (nodeId: string, updater: (node: MoshNode) => MoshNode) => {
     updateMoshGraph(activeScope, (prev) => ({
@@ -152,31 +160,40 @@ const MoshView = () => {
   return (
     <div className="flex h-full w-full flex-col gap-3 lg:flex-row">
       <div className="w-full shrink-0 lg:w-[260px]">
-          <MoshScopeSidebar
-                    scope={activeScope}
-                    onScopeChange={(scope) => {
-                      setCurrentMoshScope(scope)
-                      setSelectedNodeId(null)
-                    }}
-                  />
+        <MoshScopeSidebar
+          scope={activeScope}
+          onScopeChange={(scope) => {
+            setCurrentMoshScope(scope)
+            setSelectedNodeId(null)
+          }}
+        />
       </div>
+
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div className="space-y-2 rounded-xl border border-surface-300/60 bg-surface-200/80 p-4 shadow-panel">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Viewer</p>
-              <p className="text-sm text-slate-300">Preview the current timeline scope with mosh bypass control.</p>
+              <p className="text-sm text-slate-300">
+                Preview the current timeline scope with mosh bypass control.
+              </p>
             </div>
             <label className="flex cursor-pointer items-center gap-2 rounded-md border border-surface-300/60 px-3 py-2 text-sm text-slate-200">
               <input
                 type="checkbox"
-                checked={project.moshBypassGlobal ?? false}
+                checked={globalBypass}
                 onChange={(e) => setMoshBypassGlobal(e.target.checked)}
               />
-              {project.moshBypassGlobal ? <ToggleRight className="h-4 w-4 text-accent" /> : <ToggleLeft className="h-4 w-4 text-slate-400" />}
+              {globalBypass ? (
+                <ToggleRight className="h-4 w-4 text-accent" />
+              ) : (
+                <ToggleLeft className="h-4 w-4 text-slate-400" />
+              )}
               Bypass Mosh
             </label>
-          <div className="mb-4">
+          </div>
+
+          <div className="mt-4">
             <Viewer
               project={project}
               // Mosh is “enabled” at the view level when the global bypass is off.
@@ -188,18 +205,25 @@ const MoshView = () => {
               moshNodes={graph.nodes}
             />
           </div>
-          {/* Let the graph occupy the remaining vertical space in the middle column */}
-                  <div className="flex-1 min-h-0">
-                    <MoshGraphView
-                      graph={graph}
-                      onUpdateGraph={(updater) => updateMoshGraph(activeScope, updater)}
-                      onSelectNode={setSelectedNodeId}
-                      selectedNodeId={selectedNodeId}
-                    />
-                  </div>
+        </div>
+
+        {/* Let the graph occupy the remaining vertical space in the middle column */}
+        <div className="flex-1 min-h-0">
+          <MoshGraphView
+            graph={graph}
+            onUpdateGraph={(updater) => updateMoshGraph(activeScope, updater)}
+            onSelectNode={setSelectedNodeId}
+            selectedNodeId={selectedNodeId}
+          />
+        </div>
       </div>
+
       <div className="w-full shrink-0 lg:w-[320px]">
-        <MoshSidePanel selectedNode={selectedNode} onAddNode={handleAddNode} onUpdateNode={handleUpdateNode} />
+        <MoshSidePanel
+          selectedNode={selectedNode}
+          onAddNode={handleAddNode}
+          onUpdateNode={handleUpdateNode}
+        />
       </div>
     </div>
   )
