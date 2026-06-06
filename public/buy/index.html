@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buy dmosh desktop</title>
+    <meta name="description" content="Buy the native dmosh desktop build — signed, fast, large-file ready. Or compile it yourself for free." />
+    <link rel="icon" type="image/svg+xml" href="../vite.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <!--
+      ============================================================================
+      TO GO LIVE: set CHECKOUT_URL below to your payment link.
+      Recommended providers (merchant-of-record → they handle VAT/tax + delivery):
+        • Lemon Squeezy / Polar / Paddle / Gumroad — create a "digital product",
+          upload the signed app build(s), set the price, copy the buy/checkout URL.
+      LICENSE KEYS: the app verifies offline Ed25519 keys minted by `licctl sign`.
+        Two ways to fulfil them:
+          (a) Use the store's own license keys + an online check (simplest), or
+          (b) mint a licctl key per sale via the store's purchase webhook and
+              email it (keeps the keys fully offline). See src-tauri/src/license.rs.
+      Also set the price text (data-price) and the DOWNLOAD note to match.
+      ============================================================================
+    -->
+    <style>
+      :root {
+        --accent: #ff5135;
+        --ink: #1a1a1a;
+        --muted: #6b7280;
+        --line: #e5e5e5;
+        --bg: #fafafa;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        line-height: 1.5;
+      }
+      .mono { font-family: 'IBM Plex Mono', monospace; }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+      }
+      header .brand { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px; }
+      header a { color: var(--muted); text-decoration: none; font-size: 13px; }
+      header a:hover { color: var(--ink); }
+      main { max-width: 620px; margin: 0 auto; padding: 48px 20px 64px; }
+      h1 { font-size: 30px; line-height: 1.15; margin: 0 0 10px; letter-spacing: -0.01em; }
+      .lede { color: var(--muted); font-size: 16px; margin: 0 0 28px; }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        padding: 22px;
+        margin-bottom: 20px;
+      }
+      .price { display: flex; align-items: baseline; gap: 8px; margin-bottom: 16px; }
+      .price b { font-size: 30px; font-weight: 600; }
+      .price span { color: var(--muted); font-size: 14px; }
+      .buy {
+        display: block;
+        text-align: center;
+        background: var(--accent);
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 15px;
+        padding: 13px 16px;
+        border-radius: 9px;
+        transition: opacity 0.15s;
+      }
+      .buy:hover { opacity: 0.9; }
+      .trial { text-align: center; color: var(--muted); font-size: 12px; margin-top: 10px; }
+      ul { list-style: none; padding: 0; margin: 0; }
+      ul li { padding: 7px 0 7px 26px; position: relative; font-size: 14px; border-top: 1px solid var(--line); }
+      ul li:first-child { border-top: none; }
+      ul li::before { content: '→'; position: absolute; left: 0; color: var(--accent); }
+      h2 { font-size: 13px; text-transform: none; color: var(--muted); font-weight: 600; margin: 0 0 12px; }
+      .steps { counter-reset: step; }
+      .steps li { padding-left: 30px; }
+      .steps li::before { counter-increment: step; content: counter(step); color: var(--accent); font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+      .free { color: var(--muted); font-size: 14px; }
+      .free a { color: var(--ink); }
+      code { font-family: 'IBM Plex Mono', monospace; background: #f0f0ef; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+      footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; border-top: 1px solid var(--line); }
+      footer a { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="brand">dmosh</span>
+      <a href="../">← back to the web app</a>
+    </header>
+
+    <main>
+      <h1>dmosh desktop</h1>
+      <p class="lede">
+        The same datamosher, native. It uses your machine's ffmpeg instead of the in-browser
+        WebAssembly one — so it's much faster and handles large files the browser can't.
+      </p>
+
+      <div class="card">
+        <div class="price">
+          <b data-price>$19</b>
+          <span>one-time · all platforms · free updates</span>
+        </div>
+        <a class="buy" id="checkout" href="https://buy.stripe.com/28EaEY2me5xXaML6Fbg7e00">Buy dmosh desktop</a>
+        <p class="trial">Try before you buy — it runs a free 10-mosh trial first.</p>
+      </div>
+
+      <div class="card">
+        <h2>What you get</h2>
+        <ul>
+          <li>A signed, ready-to-run build for macOS, Windows, and Linux</li>
+          <li>Native speed and large-file support (no browser memory ceiling)</li>
+          <li>A one-time license key — no subscription, no account</li>
+          <li>Free updates within the major version</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>How it works</h2>
+        <ul class="steps">
+          <li>Buy above — you'll get a download link and a license key by email.</li>
+          <li>Open dmosh desktop. It starts in a free trial.</li>
+          <li>Paste your key into the app to activate. Done — offline, forever.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>Rather not pay?</h2>
+        <p class="free">
+          dmosh is open source (MIT). A self-built copy is <strong>fully featured, no key</strong> —
+          paying just saves you the toolchain and funds development. Build it with
+          <code>npm run tauri:build</code> —
+          <a href="https://github.com/cbassuarez/dmosh#desktop-app">instructions here</a>.
+        </p>
+      </div>
+    </main>
+
+    <footer>
+      <a href="https://github.com/cbassuarez/dmosh">GitHub</a> · open source (MIT) ·
+      <a href="../">dmosh web app</a>
+    </footer>
+  </body>
+</html>

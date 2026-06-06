@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, RotateCcw, Dices, AlertTriangle, X, Github } from 'lucide-react'
-import pkg from '../../package.json'
 import { EFFECTS_WITHOUT_INTENSITY, type MoshEffect, type Range } from '../mosh/datamosh'
 import EffectPreview from './EffectPreview'
 import { processMoshQueued } from '../mosh/processQueue'
+import { getLicenseStatus, activateLicense, type LicenseStatus } from '../mosh/license'
+import { useLatestRelease } from './useLatestRelease'
 
 type Status = 'idle' | 'working' | 'done' | 'error'
 type View = 'preview' | 'a' | 'b' | 'output'
@@ -39,8 +40,11 @@ const KNOB: Partial<Record<MoshEffect, string>> = {
 const RANDOMIZED: ReadonlySet<MoshEffect> = new Set<MoshEffect>(['shuffle'])
 const SOFT_SIZE_WARN = 40 * 1024 * 1024
 const GITHUB_URL = 'https://github.com/cbassuarez/dmosh'
-const RELEASE_VERSION = `v${pkg.version}`
-const RELEASE_URL = `${GITHUB_URL}/releases/tag/${RELEASE_VERSION}`
+const RELEASE_URL = `${GITHUB_URL}/releases/latest`
+const DESKTOP_URL = `${GITHUB_URL}#desktop-app`
+// The live site (GitHub Pages). The buy/checkout flow will live here; until a
+// real store is wired, this lands on the site rather than a fictional domain.
+const BUY_URL = 'https://cbassuarez.github.io/dmosh/buy'
 
 function prettySize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -56,6 +60,7 @@ function randomAccent(): { base: string; soft: string } {
 }
 
 export default function MoshApp() {
+  const releaseVersion = useLatestRelease()
   const accent = useMemo(randomAccent, [])
   const accentVars = { '--accent': accent.base, '--accent-soft': accent.soft } as React.CSSProperties
 
@@ -75,6 +80,14 @@ export default function MoshApp() {
   const [error, setError] = useState<string | null>(null)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [view, setView] = useState<View>('preview')
+  const [license, setLicense] = useState<LicenseStatus>({ mode: 'unlocked', remaining: 0 })
+  const [licenseKey, setLicenseKey] = useState('')
+  const [activateError, setActivateError] = useState<string | null>(null)
+  const [desktopOpen, setDesktopOpen] = useState(false)
+
+  useEffect(() => {
+    void getLicenseStatus().then(setLicense)
+  }, [])
 
   const def = useMemo(() => EFFECTS.find((e) => e.id === effect)!, [effect])
   const needsTwo = def.clips === 2
@@ -120,6 +133,7 @@ export default function MoshApp() {
         )
         setResultUrl(URL.createObjectURL(blob))
         setStatus('done')
+        void getLicenseStatus().then(setLicense) // trial count may have ticked
         setView('output')
       } catch (err) {
         console.error('[dmosh] mosh failed:', err)
@@ -155,13 +169,21 @@ export default function MoshApp() {
           <span className="text-xs text-neutral-500">browser datamosher</span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDesktopOpen(true)}
+            title="Native desktop build for power users — faster, larger files. Buy it prebuilt or compile the source yourself."
+            className="hidden items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 font-mono text-[10px] text-neutral-600 transition-colors hover:border-neutral-300 hover:text-neutral-900 sm:inline-flex sm:h-6"
+          >
+            <Download size={11} /> desktop build
+          </button>
           <a
             href={RELEASE_URL}
             target="_blank"
             rel="noreferrer"
             className="inline-flex h-6 items-center rounded border border-neutral-200 bg-neutral-50 px-2 font-mono text-[10px] text-neutral-600 transition-colors hover:border-neutral-300 hover:text-neutral-900"
           >
-            release {RELEASE_VERSION}
+            release {releaseVersion}
           </a>
           <a
             href={GITHUB_URL}
@@ -255,16 +277,56 @@ export default function MoshApp() {
           </Section>
 
           <div className="p-3">
-            <button
-              type="button"
-              disabled={!ready || working}
-              onClick={() => run(seed)}
-              style={ready && !working ? { background: 'var(--accent)' } : undefined}
-              className="w-full rounded-md py-2.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
-            >
-              {working ? 'moshing…' : 'Mosh'}
-            </button>
-            {!ready && <p className="mt-2 text-center text-[11px] text-neutral-400">{needsTwo ? 'load two clips to begin' : 'load a clip to begin'}</p>}
+            {license.mode === 'expired' ? (
+              <div className="space-y-2">
+                <p className="text-[12px] text-neutral-700">Trial finished. Enter a license key to keep moshing.</p>
+                <input
+                  type="text"
+                  value={licenseKey}
+                  placeholder="license key"
+                  onChange={(e) => setLicenseKey(e.target.value)}
+                  className="w-full rounded border border-neutral-300 px-2 py-1.5 font-mono text-[11px] outline-none focus:border-neutral-500"
+                />
+                {activateError && <p className="text-[11px] text-red-500">{activateError}</p>}
+                <button
+                  type="button"
+                  disabled={!licenseKey.trim()}
+                  onClick={async () => {
+                    setActivateError(null)
+                    try {
+                      setLicense(await activateLicense(licenseKey.trim()))
+                    } catch (e) {
+                      setActivateError(e instanceof Error ? e.message : 'activation failed')
+                    }
+                  }}
+                  style={licenseKey.trim() ? { background: 'var(--accent)' } : undefined}
+                  className="w-full rounded-md py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:bg-neutral-200 disabled:text-neutral-400"
+                >
+                  Activate
+                </button>
+                <a href={BUY_URL} target="_blank" rel="noreferrer" className="block text-center text-[10px] text-neutral-400 hover:text-neutral-600">
+                  buy a license
+                </a>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={!ready || working}
+                  onClick={() => run(seed)}
+                  style={ready && !working ? { background: 'var(--accent)' } : undefined}
+                  className="w-full rounded-md py-2.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
+                >
+                  {working ? 'moshing…' : 'Mosh'}
+                </button>
+                {!ready && <p className="mt-2 text-center text-[11px] text-neutral-400">{needsTwo ? 'load two clips to begin' : 'load a clip to begin'}</p>}
+                {license.mode === 'trial' && (
+                  <p className="mt-2 text-center text-[10px] text-neutral-400">
+                    trial · {license.remaining} mosh{license.remaining === 1 ? '' : 'es'} left
+                  </p>
+                )}
+              </>
+            )}
           </div>
         </aside>
 
@@ -342,11 +404,59 @@ export default function MoshApp() {
           </div>
         </main>
       </div>
+
+      {desktopOpen && <DesktopModal onClose={() => setDesktopOpen(false)} />}
     </div>
   )
 }
 
 /* ---------- primitives ---------- */
+
+function DesktopModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">dmosh desktop</h2>
+            <p className="mt-1 text-[12px] leading-relaxed text-neutral-500">
+              The native build uses your machine's ffmpeg instead of WebAssembly — much faster, and it
+              handles large files the browser can't. Same app, two ways to get it.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 text-neutral-400 hover:text-neutral-700">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="mt-4 grid gap-2">
+          <a href={BUY_URL} target="_blank" rel="noreferrer" className="rounded-md border border-neutral-200 p-3 transition-colors hover:border-neutral-300">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-medium text-neutral-900">Buy the prebuilt app</span>
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-white" style={{ background: 'var(--accent)' }}>paid</span>
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
+              Signed, auto-updating, ready to run. Free trial, then a one-time license key. Funds development.
+            </p>
+          </a>
+          <a href={DESKTOP_URL} target="_blank" rel="noreferrer" className="rounded-md border border-neutral-200 p-3 transition-colors hover:border-neutral-300">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-medium text-neutral-900">Compile it yourself</span>
+              <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">free</span>
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
+              Same app, fully featured, no key. Needs Node + Rust + ffmpeg. Build steps in the README.
+            </p>
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

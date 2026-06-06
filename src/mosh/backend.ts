@@ -33,9 +33,28 @@ export const clientBackend: MoshBackend = {
   },
 }
 
-// Use the server backend when VITE_MOSH_SERVER is configured, else stay 100%
-// in-browser. The UI is identical either way.
+// True when running inside the Tauri desktop shell.
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
 const serverUrl = import.meta.env.VITE_MOSH_SERVER
-export const activeBackend: MoshBackend = serverUrl
-  ? createServerBackend(serverUrl)
-  : clientBackend
+let serverBackend: MoshBackend | null = null
+
+// Route to the right backend at call time: a configured server, the native Tauri
+// engine on desktop (lazy-loaded so @tauri-apps stays out of the web bundle), or
+// the in-browser ffmpeg.wasm/WebCodecs engine. The UI is identical across all.
+export const activeBackend: MoshBackend = {
+  id: 'auto',
+  process: async (inputs, options, onProgress) => {
+    if (serverUrl) {
+      serverBackend ??= createServerBackend(serverUrl)
+      return serverBackend.process(inputs, options, onProgress)
+    }
+    if (isTauri()) {
+      const { tauriBackend } = await import('./tauriBackend')
+      return tauriBackend.process(inputs, options, onProgress)
+    }
+    return clientBackend.process(inputs, options, onProgress)
+  },
+}

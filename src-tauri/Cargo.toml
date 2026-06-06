@@ -1,0 +1,28 @@
+[package]
+name = "dmosh"
+version = "0.2.0"
+edition = "2021"
+description = "dmosh desktop — native datamosher"
+
+[lib]
+name = "dmosh_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dmosh-core = { path = "../crates/dmosh-core" }
+ed25519-dalek = { version = "2", optional = true }
+base64 = { version = "0.22", optional = true }
+
+[features]
+# Official paid builds: `tauri build --features licensed`. Self-compiled builds
+# (default) skip the trial/key gate entirely.
+licensed = ["dep:ed25519-dalek", "dep:base64"]
+
+[dev-dependencies]
+rand_core = { version = "0.6", features = ["getrandom"] }

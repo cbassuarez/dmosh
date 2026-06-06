@@ -1,0 +1,10 @@
+[package]
+name = "licctl"
+version = "0.1.0"
+edition = "2021"
+description = "Offline license keygen/signing for dmosh (Ed25519)."
+
+[dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+base64 = "0.22"

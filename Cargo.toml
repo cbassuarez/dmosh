@@ -1,0 +1,3 @@
+[workspace]
+resolver = "2"
+members = ["crates/dmosh-core", "crates/licctl", "src-tauri"]

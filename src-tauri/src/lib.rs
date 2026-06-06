@@ -1,0 +1,106 @@
+mod license;
+
+use std::path::PathBuf;
+
+use serde::Serialize;
+use tauri::ipc::{Channel, Response};
+use tauri::AppHandle;
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProgressMsg {
+    progress: f32,
+    phase: String,
+}
+
+fn write_temp(dir: &std::path::Path, name: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    let p = dir.join(name);
+    std::fs::write(&p, bytes).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
+/// Datamosh one or two clips with the native engine. Input clips are passed as
+/// raw bytes (Tauri transfers ArrayBuffers efficiently); the moshed MP4 is
+/// returned as bytes. Heavy work runs off the UI thread.
+#[tauri::command]
+async fn mosh(
+    app: AppHandle,
+    input_a: Vec<u8>,
+    input_b: Option<Vec<u8>>,
+    options: dmosh_core::MoshOptions,
+    on_progress: Channel<ProgressMsg>,
+) -> Result<Response, String> {
+    // Gate before doing any work (no-op in self-compiled builds).
+    license::check(&app)?;
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let work = std::env::temp_dir().join(format!(
+            "dmosh-job-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+
+        let mut inputs = vec![write_temp(&work, "a.in", &input_a)?];
+        if let Some(b) = input_b {
+            inputs.push(write_temp(&work, "b.in", &b)?);
+        }
+
+        let progress = |p: f32, phase: &str| {
+            let _ = on_progress.send(ProgressMsg { progress: p, phase: phase.to_string() });
+        };
+        let out = dmosh_core::mosh(&inputs, &options, &progress)?;
+        let bytes = std::fs::read(&out).map_err(|e| e.to_string())?;
+
+        // Best-effort cleanup of both the job inputs and the engine's work dir.
+        let _ = std::fs::remove_dir_all(&work);
+        if let Some(parent) = out.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+        Ok(bytes)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    // Count a successful mosh against the trial (no-op in self-compiled builds).
+    license::note_use(&app);
+    Ok(Response::new(result))
+}
+
+#[tauri::command]
+fn license_status(app: AppHandle) -> license::Status {
+    license::status(&app)
+}
+
+#[tauri::command]
+fn activate(app: AppHandle, key: String) -> Result<license::Status, String> {
+    license::activate(&app, &key)
+}
+
+/// Point the engine at the bundled ffmpeg sidecar (placed next to the executable
+/// by Tauri's `externalBin`). An explicit `DMOSH_FFMPEG` env wins; otherwise we
+/// fall through to a system `ffmpeg` on PATH (e.g. self-compiled dev runs).
+fn configure_ffmpeg() {
+    if std::env::var_os("DMOSH_FFMPEG").is_some() {
+        return;
+    }
+    let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(sidecar) = exe.parent().map(|d| d.join(name)) {
+            if sidecar.exists() {
+                std::env::set_var("DMOSH_FFMPEG", sidecar);
+            }
+        }
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    configure_ffmpeg();
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![mosh, license_status, activate])
+        .run(tauri::generate_context!())
+        .expect("error while running dmosh");
+}

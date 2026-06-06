@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.0 - 2026-06-06
+
+- Add a native **desktop app** (Tauri): the same UI backed by a Rust engine
+  (`dmosh-core`, a port of the AVI/ops code) running native ffmpeg — much faster,
+  no browser memory ceiling, built for large files.
+- Bundle ffmpeg as a Tauri sidecar (static fetch on win/linux; `DMOSH_FFMPEG_BIN`
+  drop-in on macOS).
+- Add trial-then-key **license gating** for official builds (offline Ed25519 keys,
+  `licctl` keygen/sign tool); self-compiled builds are fully unlocked.
+- Add a `/buy` page and a header desktop modal (buy prebuilt, or compile free).
+- Redesign the UI: light, research-grade theme with a real-time GPU effect
+  preview, technical effect names, a mosh-range scrubber, keep-audio, and a
+  per-load accent colour.
+- Make the header release badge auto-update from the latest GitHub release.
+- Fix a "stuck at 100%" hang by patching AVI header frame counts after moshing.
+
 ## v0.1.0 - 2026-06-06
 
 - Establish the first public dmosh release for the browser datamosher.

@@ -7,3 +7,9 @@ playwright-report
 .vscode
 .env
 public/ffmpeg
+
+# rust / tauri
+target
+src-tauri/target
+src-tauri/gen
+src-tauri/binaries
