@@ -1,0 +1,13 @@
+name = "dmosh-fulfillment"
+main = "src/worker.mjs"
+compatibility_date = "2024-11-01"
+
+# Public-ish config (override in the dashboard if you prefer):
+[vars]
+FROM_EMAIL = "dmosh <licenses@example.com>"
+DOWNLOAD_URL = "https://cbassuarez.github.io/dmosh/"
+
+# Secrets — DO NOT put these here. Set them with:
+#   wrangler secret put STRIPE_WEBHOOK_SECRET
+#   wrangler secret put LICENSE_PRIVATE_KEY     # the base64url 32-byte seed from `licctl keygen`
+#   wrangler secret put RESEND_API_KEY

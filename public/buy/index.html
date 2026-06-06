@@ -58,13 +58,25 @@
       main { max-width: 620px; margin: 0 auto; padding: 48px 20px 64px; }
       h1 { font-size: 30px; line-height: 1.15; margin: 0 0 10px; letter-spacing: -0.01em; }
       .lede { color: var(--muted); font-size: 16px; margin: 0 0 28px; }
+      .hero {
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: #000;
+        aspect-ratio: 16 / 9;
+        margin: 0 0 28px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+      }
+      .hero video { width: 100%; height: 100%; object-fit: cover; display: block; }
       .card {
         border: 1px solid var(--line);
         border-radius: 12px;
         background: #fff;
         padding: 22px;
         margin-bottom: 20px;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
       }
+      .card:hover { border-color: #d6d6d6; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.05); }
       .price { display: flex; align-items: baseline; gap: 8px; margin-bottom: 16px; }
       .price b { font-size: 30px; font-weight: 600; }
       .price span { color: var(--muted); font-size: 14px; }
@@ -78,10 +90,14 @@
         font-size: 15px;
         padding: 13px 16px;
         border-radius: 9px;
-        transition: opacity 0.15s;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
       }
-      .buy:hover { opacity: 0.9; }
-      .trial { text-align: center; color: var(--muted); font-size: 12px; margin-top: 10px; }
+      .buy:hover { transform: translateY(-1px); filter: saturate(1.08); box-shadow: 0 10px 26px rgba(255, 81, 53, 0.32); }
+      .buy:active { transform: translateY(0); }
+      .trial { text-align: center; color: var(--muted); font-size: 12px; margin-top: 12px; }
+      .trial a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+      .trial a:hover { color: var(--accent); }
+      .free a, .footer-link { transition: color 0.15s ease; }
       ul { list-style: none; padding: 0; margin: 0; }
       ul li { padding: 7px 0 7px 26px; position: relative; font-size: 14px; border-top: 1px solid var(--line); }
       ul li:first-child { border-top: none; }
@@ -104,6 +120,9 @@
     </header>
 
     <main>
+      <div class="hero">
+        <video src="hero.mp4" poster="hero.jpg" autoplay muted loop playsinline></video>
+      </div>
       <h1>dmosh desktop</h1>
       <p class="lede">
         The same datamosher, native. It uses your machine's ffmpeg instead of the in-browser
@@ -116,7 +135,9 @@
           <span>one-time · all platforms · free updates</span>
         </div>
         <a class="buy" id="checkout" href="https://buy.stripe.com/28EaEY2me5xXaML6Fbg7e00">Buy dmosh desktop</a>
-        <p class="trial">Try before you buy — it runs a free 10-mosh trial first.</p>
+        <p class="trial">
+          <a href="../">Try it free in your browser</a> — or the desktop app gives a 10-mosh trial before you buy.
+        </p>
       </div>
 
       <div class="card">
