@@ -98,6 +98,31 @@ export function frameTypes(chunks: AviChunk[]): FrameType[] {
 }
 
 /**
+ * Patch the frame counts in the AVI header (`avih.dwTotalFrames` and the video
+ * `strh.dwLength`) to match the new chunk count. Effects that add or drop frames
+ * leave these stale otherwise, which makes ffmpeg compute the wrong duration —
+ * so its progress hits 100% early and then silently keeps encoding (the "stuck
+ * at 100%" hang), and the output's reported duration is wrong.
+ */
+function patchAviFrameCounts(out: Uint8Array, headLen: number, frameCount: number): void {
+  const view = new DataView(out.buffer, out.byteOffset, out.byteLength)
+  for (let i = 12; i + 8 <= headLen; ) {
+    const id = readFourCC(out, i)
+    const size = view.getUint32(i + 4, true)
+    if (id === 'LIST') {
+      i += 12 // descend into hdrl / strl
+      continue
+    }
+    if (id === 'avih') {
+      view.setUint32(i + 8 + 16, frameCount, true) // dwTotalFrames
+    } else if (id === 'strh' && readFourCC(out, i + 8) === 'vids') {
+      view.setUint32(i + 8 + 32, frameCount, true) // dwLength (frames)
+    }
+    i += 8 + size + (size & 1)
+  }
+}
+
+/**
  * Re-mux a header + frame chunk list back into a valid AVI. The original `idx1`
  * index is intentionally dropped (we don't copy it and don't rebuild it):
  * ffmpeg re-derives timing from the chunk stream on the re-encode pass, which
@@ -114,6 +139,8 @@ export function writeAvi(head: Uint8Array, chunks: AviChunk[]): Uint8Array {
   const view = new DataView(out.buffer)
 
   out.set(head, 0)
+  // Keep the header's frame counts in sync with the (possibly resized) stream.
+  patchAviFrameCounts(out, head.length, chunks.length)
   let p = head.length
 
   // `LIST <size> movi`
