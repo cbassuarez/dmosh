@@ -156,7 +156,8 @@ async function encodeToMp4(
     [
       '-i', 'm.avi',
       '-c:v', 'libx264',
-      '-crf', '18', // sharper final encode so the mosh isn't muddied
+      '-preset', 'veryfast', // fast bake — preset doesn't affect the mosh look
+      '-crf', '20',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       '-an',

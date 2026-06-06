@@ -69,6 +69,14 @@ async fn mosh(
     Ok(Response::new(result))
 }
 
+/// Write the moshed bytes to a path the user chose via the native Save dialog.
+#[tauri::command]
+async fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || std::fs::write(&path, &data).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 fn license_status(app: AppHandle) -> license::Status {
     license::status(&app)
@@ -100,7 +108,8 @@ fn configure_ffmpeg() {
 pub fn run() {
     configure_ffmpeg();
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![mosh, license_status, activate])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![mosh, write_file, license_status, activate])
         .run(tauri::generate_context!())
         .expect("error while running dmosh");
 }

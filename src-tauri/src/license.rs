@@ -47,7 +47,7 @@ mod imp {
 
     // Replace with your real public key from `licctl keygen`. While it's the
     // placeholder, no key validates (trial still works), so this fails safe.
-    const PUBLIC_KEY_B64: &str = "REPLACE_WITH_YOUR_ED25519_PUBLIC_KEY";
+    const PUBLIC_KEY_B64: &str = "D-iq2UxzSTK9RvMy4D7a3EO_uvJ7I1yYsxFT_pssY8w";
     const TRIAL_MOSHES: u32 = 10;
 
     #[derive(Serialize, Deserialize, Default)]

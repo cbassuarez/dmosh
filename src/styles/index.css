@@ -31,6 +31,25 @@ aside::-webkit-scrollbar-thumb:hover {
   @apply bg-neutral-400;
 }
 
+/* ---- mosh sprite ---- */
+.dmosh-sprite { display: inline-block; }
+.dmosh-sprite svg { animation: dmosh-sprite-glitch 4.5s steps(1, end) infinite; }
+@keyframes dmosh-sprite-glitch {
+  0%, 88%, 100% { transform: translate(0, 0); filter: none; }
+  90% { transform: translate(-1.5px, 0); filter: drop-shadow(2px 0 var(--accent, #ff5135)) drop-shadow(-2px 0 #38bdf8); }
+  92% { transform: translate(1.5px, 0); }
+  94% { transform: translate(0, 0); filter: none; }
+}
+.dmosh-sprite .eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: dmosh-sprite-blink 5s steps(1, end) infinite;
+}
+@keyframes dmosh-sprite-blink {
+  0%, 96%, 100% { transform: scaleY(1); }
+  98% { transform: scaleY(0.15); }
+}
+
 /* ---- controls ---- */
 
 /* Range slider thumb: small, square-ish, restrained. */

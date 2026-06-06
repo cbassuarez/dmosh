@@ -132,7 +132,7 @@ fn encode_to_mp4(
         let video = avi_path.with_extension("v.mp4");
         ff(&[
             "-i", &avi_path.to_string_lossy(),
-            "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+            "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an",
             &video.to_string_lossy(),
         ])?;
@@ -151,7 +151,7 @@ fn encode_to_mp4(
     }
     ff(&[
         "-i", &avi_path.to_string_lossy(),
-        "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+        "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
         "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an",
         &out_path.to_string_lossy(),
     ])
