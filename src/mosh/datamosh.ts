@@ -10,8 +10,8 @@ import {
   reverse,
   transition,
   applyWindowed,
-  isFullRange,
   type Range,
+  type DropTargets,
 } from './ops'
 
 export type { Range } from './ops'
@@ -24,6 +24,7 @@ export type MoshEffect =
   | 'sort'
   | 'reverse'
   | 'transition'
+  | 'flow' // GPU optical-flow smear; routed to webcodecs.ts, not this wasm engine
 
 export interface MoshOptions {
   effect: MoshEffect
@@ -37,6 +38,12 @@ export interface MoshOptions {
   seed?: number
   /** Mosh only this fractional window of the clip (single-clip effects). */
   range?: Range
+  /** Strip I-frames (bloom/transition). Defaults true. */
+  dropI?: boolean
+  /** Strip P-frames (bloom/transition). Defaults false. */
+  dropP?: boolean
+  /** Explicit repeat count per hit for stutter (else derived from intensity). */
+  repeat?: number
 }
 
 export type MoshProgress = (ratio: number, phase: string) => void
@@ -44,23 +51,25 @@ export type MoshProgress = (ratio: number, phase: string) => void
 const DEFAULTS = { intensity: 0.8, maxDimension: 960, seed: 0x6d6f7368 }
 
 /** Effects that don't take an amount (the UI hides the slider for these). */
-export const EFFECTS_WITHOUT_INTENSITY: ReadonlySet<MoshEffect> = new Set([
-  'sort',
-  'reverse',
-  'transition',
-])
+export const EFFECTS_WITHOUT_INTENSITY: ReadonlySet<MoshEffect> = new Set(['sort', 'reverse'])
 
-// Per-effect GOP: bloom-family needs regular interior keyframes to drop; the
-// P-frame scramblers want one keyframe + a long predicted run; stutter wants
-// long P runs; transition wants clip B to re-establish after the cut.
+// Per-effect GOP. The single-clip melts want one keyframe + a long predicted run
+// (so duplicated/redirected motion accumulates with no resets); transition wants
+// periodic keyframes in B so the Bleed control has something to span.
 const GOP: Record<MoshEffect, number> = {
-  bloom: 12,
-  bloomBurst: 12,
-  stutter: 300,
+  bloom: 9999,
+  bloomBurst: 9999,
+  stutter: 9999,
   shuffle: 9999,
   sort: 9999,
   reverse: 9999,
-  transition: 15,
+  transition: 30,
+  flow: 12, // unused (flow runs on the GPU engine), present to satisfy the map
+}
+
+/** Map an amount (0..1) to an mpeg4 qscale — more amount = grittier mosh. */
+function qscaleFor(intensity: number): number {
+  return 4 + Math.round(Math.max(0, Math.min(1, intensity)) * 5) // 4..9
 }
 
 async function fileBytes(file: File): Promise<Uint8Array> {
@@ -103,9 +112,14 @@ async function transcodeToChunks(
   outName: string,
   vfilter: string,
   gop: number,
+  qscale: number,
   onProgress?: (ratio: number) => void,
 ): Promise<{ head: Uint8Array; chunks: AviChunk[] }> {
   await ff.writeFile(inName, await fileBytes(file))
+  // Lower quality (higher qscale) is what makes the mosh read: coarse residuals
+  // let the motion vectors dominate so duplicated/redirected motion smears
+  // instead of being corrected back. We deliberately avoid -mbd/-mv4/-trellis —
+  // those sharpen prediction and sand the grit off the datamosh.
   await runExec(
     ff,
     [
@@ -114,12 +128,9 @@ async function transcodeToChunks(
       '-vf', vfilter,
       '-c:v', 'mpeg4',
       '-vtag', 'xvid', // broad decoder compatibility for the moshed AVI
-      '-q:v', '1',
+      '-qscale:v', String(qscale),
       '-g', String(gop),
       '-bf', '0', // no B-frames — predictable P-frame behaviour
-      '-mbd', 'rd', // rate-distortion macroblock decision
-      '-flags', '+mv4', // 4 motion vectors per macroblock → finer smear
-      '-trellis', '2',
       outName,
     ],
     onProgress,
@@ -190,21 +201,22 @@ async function cleanup(ff: FFmpeg, names: string[]): Promise<void> {
   )
 }
 
-function applySingle(
-  effect: MoshEffect,
-  chunks: AviChunk[],
-  intensity: number,
-  seed: number,
-): AviChunk[] {
+interface ApplyParams {
+  intensity: number
+  seed: number
+  repeat?: number
+}
+
+function applySingle(effect: MoshEffect, chunks: AviChunk[], p: ApplyParams): AviChunk[] {
   switch (effect) {
     case 'bloom':
-      return bloom(chunks, intensity, seed)
+      return bloom(chunks, p.intensity)
     case 'bloomBurst':
-      return bloomBurst(chunks, intensity, seed)
+      return bloomBurst(chunks, p.intensity)
     case 'stutter':
-      return stutter(chunks, intensity)
+      return stutter(chunks, p.intensity, p.repeat)
     case 'shuffle':
-      return shuffle(chunks, intensity, seed)
+      return shuffle(chunks, p.intensity, p.seed)
     case 'sort':
       return sortByMotion(chunks)
     case 'reverse':
@@ -227,7 +239,9 @@ export async function datamosh(
   const maxDim = options.maxDimension ?? DEFAULTS.maxDimension
   const seed = options.seed ?? DEFAULTS.seed
   const keepAudio = options.keepAudio ?? false
+  const targets: DropTargets = { i: options.dropI ?? true, p: options.dropP ?? false }
   const gop = GOP[options.effect]
+  const qscale = qscaleFor(intensity)
   const ff = await getFFmpeg()
 
   if (options.effect === 'transition') {
@@ -237,16 +251,17 @@ export async function datamosh(
     const nf = normalizeFilter(w, h)
 
     onProgress?.(0, 'Transcoding clip A')
-    const a = await transcodeToChunks(ff, inputs[0], 'a.in', 'a.avi', nf, gop, (r) =>
+    const a = await transcodeToChunks(ff, inputs[0], 'a.in', 'a.avi', nf, gop, qscale, (r) =>
       onProgress?.(r * 0.4, 'Transcoding clip A'),
     )
     onProgress?.(0.4, 'Transcoding clip B')
-    const b = await transcodeToChunks(ff, inputs[1], 'b.in', 'b.avi', nf, gop, (r) =>
+    const b = await transcodeToChunks(ff, inputs[1], 'b.in', 'b.avi', nf, gop, qscale, (r) =>
       onProgress?.(0.4 + r * 0.4, 'Transcoding clip B'),
     )
 
     onProgress?.(0.8, 'Moshing')
-    const moshed = writeAvi(a.head, transition(a.chunks, b.chunks))
+    // The transition's Amount slider drives the bleed length into clip B.
+    const moshed = writeAvi(a.head, transition(a.chunks, b.chunks, targets, intensity))
 
     onProgress?.(0.82, 'Encoding')
     const blob = await encodeToMp4(
@@ -260,11 +275,6 @@ export async function datamosh(
     return blob
   }
 
-  // A partial range needs interior keyframes so the picture re-establishes after
-  // the moshed window — override the per-effect GOP to a moderate cadence.
-  const partialRange = !isFullRange(options.range)
-  const effectiveGop = partialRange ? 12 : gop
-
   onProgress?.(0, 'Transcoding')
   const { head, chunks } = await transcodeToChunks(
     ff,
@@ -272,7 +282,8 @@ export async function datamosh(
     'in.src',
     'work.avi',
     fitFilter(maxDim),
-    effectiveGop,
+    gop,
+    qscale,
     (r) => onProgress?.(r * 0.5, 'Transcoding'),
   )
 
@@ -280,7 +291,7 @@ export async function datamosh(
   const moshed = writeAvi(
     head,
     applyWindowed(
-      (cs) => applySingle(options.effect, cs, intensity, seed),
+      (cs) => applySingle(options.effect, cs, { intensity, seed, repeat: options.repeat }),
       chunks,
       options.range,
     ),

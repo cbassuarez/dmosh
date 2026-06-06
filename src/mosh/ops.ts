@@ -9,6 +9,13 @@ import { frameType } from './avi'
 
 const DEFAULT_SEED = 0x6d6f7368 // "mosh"
 
+/** Which frame types an effect is allowed to strip. */
+export interface DropTargets {
+  i: boolean
+  p: boolean
+}
+const DEFAULT_TARGETS: DropTargets = { i: true, p: false }
+
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x))
 }
@@ -23,10 +30,8 @@ function splitSeed(chunks: AviChunk[]): { seed: AviChunk[]; rest: AviChunk[] } {
   return { seed: [chunks[0]], rest: chunks.slice(1) }
 }
 
-/** Drop interior keyframes (keep the first), so motion bleeds across the frame. */
-export function bloom(chunks: AviChunk[], intensity = 1, seed = DEFAULT_SEED): AviChunk[] {
-  const p = clamp01(intensity)
-  const rng = mulberry32(seed)
+/** Keep the first keyframe as a seed, drop every later keyframe. */
+export function stripInteriorKeyframes(chunks: AviChunk[]): AviChunk[] {
   let seenFirst = false
   return chunks.filter((c) => {
     if (frameType(c.data) !== 'I') return true
@@ -34,19 +39,40 @@ export function bloom(chunks: AviChunk[], intensity = 1, seed = DEFAULT_SEED): A
       seenFirst = true
       return true
     }
-    return rng() >= p
+    return false
   })
+}
+
+/**
+ * Bloom / smear: duplicate every predicted frame so its motion vectors re-apply
+ * to already-moved content — the signature melt that drags and streaks. This is
+ * the real single-clip datamosh: unlike stripping keyframes (which only melts at
+ * a cut), repeating motion accumulates the smear within continuous footage.
+ * `intensity` sets how many extra copies each P-frame gets (1–4).
+ */
+export function bloom(chunks: AviChunk[], intensity = 0.7): AviChunk[] {
+  const copies = 1 + Math.round(clamp01(intensity) * 3)
+  const out: AviChunk[] = []
+  for (const c of chunks) {
+    out.push(c)
+    if (frameType(c.data) === 'P') {
+      for (let k = 0; k < copies; k++) out.push(c)
+    }
+  }
+  return out
 }
 
 /**
  * Stutter / P-frame repeat: periodically duplicate predicted frames so their
  * motion vectors re-apply, freezing/echoing motion into a glitchy judder.
+ * `intensity` is the rate (how often a P-frame is repeated); `repeat`, when
+ * given, is the explicit number of extra copies per hit (else derived from rate).
  */
-export function stutter(chunks: AviChunk[], intensity = 0.5): AviChunk[] {
+export function stutter(chunks: AviChunk[], intensity = 0.5, repeat?: number): AviChunk[] {
   const t = clamp01(intensity)
   if (t <= 0) return chunks.slice()
-  const period = Math.max(2, Math.round(16 * (1 - t)))
-  const extra = Math.max(1, Math.round(8 * t))
+  const period = Math.max(1, Math.round(16 * (1 - t)))
+  const extra = repeat != null ? Math.max(1, Math.round(repeat)) : Math.max(1, Math.round(8 * t))
 
   const out: AviChunk[] = []
   let pIndex = 0
@@ -63,25 +89,23 @@ export function stutter(chunks: AviChunk[], intensity = 0.5): AviChunk[] {
 }
 
 /**
- * Bloom burst: drop interior keyframes, then find the single strongest-motion
- * P-frame (largest chunk) and repeat it many times in place — the explosive,
- * psychedelic bloom. `intensity` scales the repeat count (~4–48).
+ * Bloom burst: find the single strongest-motion P-frame (largest chunk) and
+ * repeat it many times in place — one explosive, psychedelic pulse rather than a
+ * continuous melt. `intensity` scales the repeat count (~8–50).
  */
-export function bloomBurst(chunks: AviChunk[], intensity = 0.7, seed = DEFAULT_SEED): AviChunk[] {
-  const bloomed = bloom(chunks, 1, seed)
-  // Index of the strongest P-frame.
+export function bloomBurst(chunks: AviChunk[], intensity = 0.7): AviChunk[] {
   let best = -1
   let bestLen = -1
-  for (let i = 0; i < bloomed.length; i++) {
-    if (frameType(bloomed[i].data) === 'P' && bloomed[i].data.length > bestLen) {
-      bestLen = bloomed[i].data.length
+  for (let i = 0; i < chunks.length; i++) {
+    if (frameType(chunks[i].data) === 'P' && chunks[i].data.length > bestLen) {
+      bestLen = chunks[i].data.length
       best = i
     }
   }
-  if (best < 0) return bloomed
-  const copies = Math.round(lerp(4, 48, intensity))
-  const burst = Array.from({ length: copies }, () => bloomed[best])
-  return [...bloomed.slice(0, best + 1), ...burst, ...bloomed.slice(best + 1)]
+  if (best < 0) return chunks.slice()
+  const copies = Math.round(lerp(8, 50, intensity))
+  const burst = Array.from({ length: copies }, () => chunks[best])
+  return [...chunks.slice(0, best + 1), ...burst, ...chunks.slice(best + 1)]
 }
 
 /**
@@ -90,8 +114,8 @@ export function bloomBurst(chunks: AviChunk[], intensity = 0.7, seed = DEFAULT_S
  * smaller blocks (finer chaos).
  */
 export function shuffle(chunks: AviChunk[], intensity = 0.5, seed = DEFAULT_SEED): AviChunk[] {
-  const bloomed = bloom(chunks, 1, seed)
-  const { seed: head, rest } = splitSeed(bloomed)
+  const stripped = stripInteriorKeyframes(chunks)
+  const { seed: head, rest } = splitSeed(stripped)
   const block = Math.max(1, Math.round(lerp(8, 1, intensity)))
   const blocks: AviChunk[][] = []
   for (let i = 0; i < rest.length; i += block) blocks.push(rest.slice(i, i + block))
@@ -108,8 +132,8 @@ export function shuffle(chunks: AviChunk[], intensity = 0.5, seed = DEFAULT_SEED
  * magnitude (strongest first) so the smear builds and resolves unnaturally.
  */
 export function sortByMotion(chunks: AviChunk[]): AviChunk[] {
-  const bloomed = bloom(chunks, 1)
-  const { seed: head, rest } = splitSeed(bloomed)
+  const stripped = stripInteriorKeyframes(chunks)
+  const { seed: head, rest } = splitSeed(stripped)
   const sorted = rest.slice().sort((a, b) => b.data.length - a.data.length)
   return [...head, ...sorted]
 }
@@ -119,19 +143,33 @@ export function sortByMotion(chunks: AviChunk[]): AviChunk[] {
  * plays backward over forward content.
  */
 export function reverse(chunks: AviChunk[]): AviChunk[] {
-  const bloomed = bloom(chunks, 1)
-  const { seed: head, rest } = splitSeed(bloomed)
+  const stripped = stripInteriorKeyframes(chunks)
+  const { seed: head, rest } = splitSeed(stripped)
   return [...head, ...rest.reverse()]
 }
 
 /**
- * Transition bloom: concatenate clip A and clip B, dropping B's leading
- * keyframe(s) at the cut so A's final motion bleeds into B.
+ * Transition / classic datamosh: concatenate clip A and clip B, then strip the
+ * targeted frame types from a leading window of B so A's motion bleeds into B.
+ * `bleed` (0..1) is how far into B that window reaches — small/0 strips just the
+ * cut keyframe (classic); larger keeps A melting through more of B. `targets`
+ * selects I-frame and/or P-frame removal.
  */
-export function transition(a: AviChunk[], b: AviChunk[]): AviChunk[] {
-  let i = 0
-  while (i < b.length && frameType(b[i].data) === 'I') i += 1
-  return [...a, ...b.slice(i)]
+export function transition(
+  a: AviChunk[],
+  b: AviChunk[],
+  targets: DropTargets = DEFAULT_TARGETS,
+  bleed = 0,
+): AviChunk[] {
+  const windowLen = Math.max(1, Math.round(clamp01(bleed) * b.length))
+  const out = [...a]
+  for (let i = 0; i < b.length; i++) {
+    const t = frameType(b[i].data)
+    const inWindow = i < windowLen
+    const drop = inWindow && ((t === 'I' && targets.i) || (t === 'P' && targets.p))
+    if (!drop) out.push(b[i])
+  }
+  return out
 }
 
 /** A fractional [start, end] window over a clip (0..1). */

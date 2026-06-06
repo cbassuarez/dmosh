@@ -4,92 +4,52 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  --accent: #ff5135;
 }
 
 body {
-  @apply bg-surface-100 text-slate-100 font-sans antialiased min-h-screen;
+  @apply bg-neutral-50 text-neutral-800 font-sans antialiased min-h-screen;
 }
 
 #root {
-  @apply min-h-screen bg-surface-100;
-}
-
-a {
-  @apply text-slate-100;
+  @apply min-h-screen;
 }
 
 ::selection {
-  @apply bg-accent/50 text-white;
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
-.scrollbar-dark::-webkit-scrollbar {
-  width: 10px;
+/* Quiet sidebar scrollbar. */
+aside::-webkit-scrollbar {
+  width: 8px;
+}
+aside::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-neutral-300;
+}
+aside::-webkit-scrollbar-thumb:hover {
+  @apply bg-neutral-400;
 }
 
-.scrollbar-dark::-webkit-scrollbar-track {
-  @apply bg-surface-200;
-}
+/* ---- controls ---- */
 
-.scrollbar-dark::-webkit-scrollbar-thumb {
-  @apply bg-surface-300 rounded-full border border-surface-200;
-}
-
-.scrollbar-dark::-webkit-scrollbar-thumb:hover {
-  @apply bg-surface-400;
-}
-
-/* ---- datamosher chrome ---- */
-
-/* Glitch wordmark: two offset color-split copies that jitter on a clip path. */
-.dmosh-glitch {
-  color: #f4f4f5;
-}
-.dmosh-glitch::before,
-.dmosh-glitch::after {
-  content: attr(data-text);
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0; /* hidden at rest — only the clean wordmark shows */
-}
-.dmosh-glitch::before {
-  color: #ff5135;
-  animation: dmosh-glitch-a 3.6s steps(2, end) infinite;
-}
-.dmosh-glitch::after {
-  color: #38bdf8;
-  animation: dmosh-glitch-b 3.6s steps(2, end) infinite;
-}
-@keyframes dmosh-glitch-a {
-  0%, 90%, 100% { opacity: 0; transform: translate(0, 0); clip-path: inset(0 0 0 0); }
-  91% { opacity: 0.9; transform: translate(-3px, 1px); clip-path: inset(0 0 62% 0); }
-  94% { opacity: 0.9; transform: translate(3px, -1px); clip-path: inset(58% 0 0 0); }
-}
-@keyframes dmosh-glitch-b {
-  0%, 90%, 100% { opacity: 0; transform: translate(0, 0); clip-path: inset(0 0 0 0); }
-  92% { opacity: 0.9; transform: translate(3px, -1px); clip-path: inset(0 0 70% 0); }
-  95% { opacity: 0.9; transform: translate(-3px, 1px); clip-path: inset(66% 0 0 0); }
-}
-
-/* Range slider thumb in the accent colour. */
+/* Range slider thumb: small, square-ish, restrained. */
 .dmosh-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 9999px;
-  background: #ff5135;
-  border: 2px solid #0b0b0f;
-  box-shadow: 0 0 0 1px rgba(255, 81, 53, 0.5);
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--accent, #ff5135);
+  border: none;
   cursor: pointer;
 }
 .dmosh-range::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 9999px;
-  background: #ff5135;
-  border: 2px solid #0b0b0f;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--accent, #ff5135);
+  border: none;
   cursor: pointer;
 }
 
@@ -99,7 +59,7 @@ a {
   top: 0;
   left: 0;
   width: 100%;
-  height: 24px;
+  height: 20px;
   margin: 0;
   background: transparent;
   pointer-events: none; /* track is non-interactive… */
@@ -111,35 +71,4 @@ a {
 }
 .dmosh-dual input[type='range']::-moz-range-thumb {
   pointer-events: auto;
-}
-
-/* Animated diagonal hatch riding the progress bar. */
-.dmosh-bar {
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(0, 0, 0, 0.18) 0,
-    rgba(0, 0, 0, 0.18) 6px,
-    transparent 6px,
-    transparent 12px
-  );
-  background-size: 200% 100%;
-  animation: dmosh-bar-slide 0.8s linear infinite;
-}
-@keyframes dmosh-bar-slide {
-  from { background-position: 0 0; }
-  to { background-position: 34px 0; }
-}
-
-/* Film grain + scanline overlays. */
-.dmosh-grain {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-.dmosh-scan {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.6) 0,
-    rgba(255, 255, 255, 0.6) 1px,
-    transparent 1px,
-    transparent 3px
-  );
 }

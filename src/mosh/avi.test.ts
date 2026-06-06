@@ -68,14 +68,17 @@ describe('parseAvi / writeAvi round-trip', () => {
 })
 
 describe('bloom', () => {
-  it('keeps the first keyframe and drops the rest at full intensity', () => {
-    const chunks = makeStream('IPPIPPIPP')
-    const out = bloom(chunks, 1)
-    expect(frameTypes(out).join('')).toBe('IPPPPPP')
+  it('duplicates every P-frame so motion accumulates into a melt', () => {
+    // copies = 1 + round(intensity*3); at intensity 1 → 4 extra, so each P → 5.
+    const out = bloom(makeStream('IPPP'), 1)
+    expect(out.length).toBe(1 + 3 * 5) // I + three P's each expanded to 5
+    expect(frameTypes(out).filter((t: FrameType) => t === 'I')).toHaveLength(1)
   })
-  it('is a no-op at zero intensity', () => {
-    const chunks = makeStream('IPPIPP')
-    expect(bloom(chunks, 0)).toHaveLength(chunks.length)
+  it('leaves I-frames untouched and keeps frame order', () => {
+    const out = bloom(makeStream('IPP'), 0)
+    // zero intensity still adds one copy per P (minimum melt)
+    expect(frameType(out[0].data)).toBe('I')
+    expect(frameTypes(out).filter((t: FrameType) => t === 'I')).toHaveLength(1)
   })
 })
 
@@ -144,6 +147,23 @@ describe('tier-A effects', () => {
     expect(a.length).toBe(chunks.length)
     expect(sizesOf(a).slice(1).sort()).toEqual(sizesOf(chunks).slice(1).sort()) // same multiset
     expect(sizesOf(a)).toEqual(sizesOf(b)) // deterministic for a given seed
+  })
+})
+
+describe('frame-type controls', () => {
+  it('stutter honours an explicit repeat count', () => {
+    const out = stutter(makeStream('IPPP'), 1, 3) // every P, +3 copies each
+    expect(out.length).toBe(1 + 3 * 4) // I + three P's each expanded to 4
+    expect(frameTypes(out).filter((t: FrameType) => t === 'I')).toHaveLength(1)
+  })
+
+  it('transition bleed length controls how much of B is stripped', () => {
+    const a = makeStream('IPP')
+    const b = makeStream('IPPIPP') // keyframes at 0 and 3
+    // bleed 0 → only the cut keyframe (classic)
+    expect(frameTypes(transition(a, b, { i: true, p: false }, 0)).join('')).toBe('IPPPPIPP')
+    // bleed 1 → strip every keyframe across B
+    expect(frameTypes(transition(a, b, { i: true, p: false }, 1)).join('')).toBe('IPPPPPP')
   })
 })
 
