@@ -1,10 +1,5 @@
-import AppRouter from './router'
-import { ProjectProvider } from './shared/hooks/useProject'
+import MoshApp from './app/MoshApp'
 
-const App = () => (
-  <ProjectProvider>
-    <AppRouter />
-  </ProjectProvider>
-)
+const App = () => <MoshApp />
 
 export default App

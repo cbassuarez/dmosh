@@ -1,5 +1,4 @@
 // vite.config.ts
-import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -11,10 +10,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": "/src",
-      "@ffmpeg/ffmpeg": path.resolve(
-        process.cwd(),
-        "node_modules/@ffmpeg/ffmpeg/dist/umd/ffmpeg.js",
-      ),
     },
+  },
+  // @ffmpeg/ffmpeg's "node" export condition resolves to an empty stub; we always
+  // want the real browser ESM build (it spawns a Worker that Vite bundles for us).
+  optimizeDeps: {
+    exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"],
   },
 });
