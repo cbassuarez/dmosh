@@ -53,12 +53,11 @@ it, same code either way:
 
 ### Free — build it yourself
 
-A self-built copy is fully featured, with no license key. You need
+A self-built copy is fully featured, with no license key. Get the latest stable release [here](https://github.com/cbassuarez/dmosh/releases/latest). You need
 [Node](https://nodejs.org), the [Rust toolchain](https://rustup.rs), and
 `ffmpeg`.
 
 ```bash
-git clone https://github.com/cbassuarez/dmosh && cd dmosh
 npm install
 npm run tauri:build     # → src-tauri/target/release/bundle/
 # or: npm run tauri:dev to run it without packaging
