@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.1 - 2026-06-06
+
+- Ship prebuilt desktop binaries: a CI release matrix (macOS/Windows/Linux) builds
+  the trial-then-key app and attaches the bundles to the release.
+- Move the site to the **dmosh.com** custom domain (apex hosting).
+- Brand icons from the datamosh art: rounded squircle on macOS, square on
+  Windows/Linux; plus a designed DMG install background.
+- Native app menu + keyboard shortcuts; native Save dialog on desktop; an
+  About/Sponsor modal; a faster bake; and a small mosh sprite.
+
 ## v0.2.0 - 2026-06-06
 
 - Add a native **desktop app** (Tauri): the same UI backed by a Rust engine

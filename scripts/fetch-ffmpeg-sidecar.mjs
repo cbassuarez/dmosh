@@ -22,8 +22,15 @@ const TRIPLES = {
   'win32-x64': 'x86_64-pc-windows-msvc',
 }
 
-// Reliable static GPL builds for win/linux (BtbN). macOS handled separately.
+// Reliable static GPL (with x264) builds. macOS: evermeet's static x86_64 build
+// (runs on Apple Silicon via Rosetta), so release CI uses an x86_64 mac runner.
+// arm64 macOS has no stable static URL → local dev there falls back to the system
+// ffmpeg (or set DMOSH_FFMPEG_BIN).
 const DOWNLOADS = {
+  'darwin-x64': {
+    url: 'https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip',
+    inner: 'ffmpeg',
+  },
   'linux-x64': {
     url: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz',
     inner: 'ffmpeg', // basename of the binary inside the archive

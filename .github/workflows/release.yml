@@ -1,0 +1,67 @@
+name: Release
+
+# Builds the desktop app for macOS, Windows, and Linux and attaches the bundles
+# to the GitHub release. Triggered by pushing a version tag (e.g. v0.2.1).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build (e.g. v0.2.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13 # x86_64 build — runs on Apple Silicon via Rosetta
+          - os: ubuntu-22.04
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - run: npm ci
+
+      - name: Fetch ffmpeg sidecar
+        run: node scripts/fetch-ffmpeg-sidecar.mjs
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: dmosh ${{ github.event.inputs.tag || github.ref_name }}
+          releaseBody: |
+            Prebuilt **dmosh desktop** builds — macOS, Windows, Linux.
+
+            Starts as a free trial; activate with a license key from https://dmosh.com/buy — or build it yourself, it's open source.
+
+            > Builds are unsigned for now, so macOS Gatekeeper / Windows SmartScreen will warn on first launch (on macOS: right-click → Open).
+          releaseDraft: false
+          prerelease: false
+          # Official prebuilt = trial-then-key build; self-compiled source stays free/unlocked.
+          args: --features licensed
