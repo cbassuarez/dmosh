@@ -22,11 +22,14 @@ const TRIPLES = {
   'win32-x64': 'x86_64-pc-windows-msvc',
 }
 
-// Reliable static GPL (with x264) builds. macOS: evermeet's static x86_64 build
-// (runs on Apple Silicon via Rosetta), so release CI uses an x86_64 mac runner.
-// arm64 macOS has no stable static URL → local dev there falls back to the system
-// ffmpeg (or set DMOSH_FFMPEG_BIN).
+// Reliable static GPL (with x264) builds per host. macOS arm64 uses martin-riedl's
+// static build; macOS x64 uses evermeet; win/linux use BtbN. Each is effectively
+// static (only system frameworks/libs), so the bundled app is portable.
 const DOWNLOADS = {
+  'darwin-arm64': {
+    url: 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip',
+    inner: 'ffmpeg',
+  },
   'darwin-x64': {
     url: 'https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip',
     inner: 'ffmpeg',
