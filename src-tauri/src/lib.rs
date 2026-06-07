@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 use tauri::ipc::{Channel, Response};
-use tauri::AppHandle;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{AppHandle, Emitter, Runtime};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,11 +105,70 @@ fn configure_ffmpeg() {
     }
 }
 
+/// Native app menu. Custom items emit a "menu" event the frontend acts on
+/// (open/save/mosh/links); standard items (quit, copy/paste, …) are handled by
+/// the OS so the license-key field and friends behave natively.
+fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let app_menu = Submenu::with_items(
+        handle,
+        "dmosh",
+        true,
+        &[
+            &PredefinedMenuItem::about(handle, Some("dmosh"), None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::hide(handle, None)?,
+            &PredefinedMenuItem::quit(handle, None)?,
+        ],
+    )?;
+    let file = Submenu::with_items(
+        handle,
+        "File",
+        true,
+        &[
+            &MenuItem::with_id(handle, "open", "Open Clip…", true, Some("CmdOrCtrl+O"))?,
+            &MenuItem::with_id(handle, "save", "Save Result…", true, Some("CmdOrCtrl+S"))?,
+            &PredefinedMenuItem::separator(handle)?,
+            &MenuItem::with_id(handle, "mosh", "Mosh", true, Some("CmdOrCtrl+Enter"))?,
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        handle,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(handle, None)?,
+            &PredefinedMenuItem::redo(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::cut(handle, None)?,
+            &PredefinedMenuItem::copy(handle, None)?,
+            &PredefinedMenuItem::paste(handle, None)?,
+            &PredefinedMenuItem::select_all(handle, None)?,
+        ],
+    )?;
+    let help = Submenu::with_items(
+        handle,
+        "Help",
+        true,
+        &[
+            &MenuItem::with_id(handle, "github", "dmosh on GitHub", true, None::<&str>)?,
+            &MenuItem::with_id(handle, "sponsor", "Sponsor dmosh", true, None::<&str>)?,
+        ],
+    )?;
+    Menu::with_items(handle, &[&app_menu, &file, &edit, &help])
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     configure_ffmpeg();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .menu(|handle| build_menu(handle))
+        .on_menu_event(|app, event| {
+            let id = event.id().0.as_str();
+            if matches!(id, "open" | "save" | "mosh" | "github" | "sponsor") {
+                let _ = app.emit("menu", id);
+            }
+        })
         .invoke_handler(tauri::generate_handler![mosh, write_file, license_status, activate])
         .run(tauri::generate_context!())
         .expect("error while running dmosh");

@@ -176,6 +176,79 @@ export default function MoshApp() {
     setView('preview')
   }, [resultUrl])
 
+  const openFilePicker = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'video/*'
+    input.onchange = () => {
+      const f = input.files?.[0]
+      if (f && f.type.startsWith('video/')) setClipA(f)
+    }
+    input.click()
+  }, [])
+
+  const downloadResult = useCallback(() => {
+    if (!resultUrl) return
+    const a = document.createElement('a')
+    a.href = resultUrl
+    a.download = `dmosh-${effect}.mp4`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }, [resultUrl, effect])
+
+  // Latest action closures, read by the global shortcuts and native menu events.
+  const actionsRef = useRef({ mosh: () => {}, save: () => {}, open: () => {} })
+  actionsRef.current = {
+    mosh: () => {
+      if (ready && !working) void run(seed)
+    },
+    save: () => {
+      if (status === 'done' && resultUrl) void (isDesktop ? saveResult() : downloadResult())
+    },
+    open: openFilePicker,
+  }
+
+  // Keyboard shortcuts in the browser (desktop uses the native menu accelerators).
+  useEffect(() => {
+    if (isDesktop) return
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      const k = e.key.toLowerCase()
+      if (k === 'enter') {
+        e.preventDefault()
+        actionsRef.current.mosh()
+      } else if (k === 's') {
+        e.preventDefault()
+        actionsRef.current.save()
+      } else if (k === 'o') {
+        e.preventDefault()
+        actionsRef.current.open()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isDesktop])
+
+  // Native menu events (desktop).
+  useEffect(() => {
+    if (!isDesktop) return
+    let unlisten: (() => void) | undefined
+    void import('@tauri-apps/api/event').then(({ listen }) =>
+      listen<string>('menu', (e) => {
+        const a = actionsRef.current
+        if (e.payload === 'mosh') a.mosh()
+        else if (e.payload === 'save') a.save()
+        else if (e.payload === 'open') a.open()
+        else if (e.payload === 'github') window.open(GITHUB_URL, '_blank')
+        else if (e.payload === 'sponsor') window.open(SPONSOR_URL, '_blank')
+      }).then((u) => {
+        unlisten = u
+      }),
+    )
+    return () => unlisten?.()
+  }, [isDesktop])
+
   return (
     <div style={accentVars} className="flex h-screen flex-col bg-neutral-50 text-neutral-800">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 bg-white px-4 py-2.5">
@@ -218,7 +291,9 @@ export default function MoshApp() {
           >
             <Github size={14} />
           </a>
-          <span className="hidden font-mono text-[10px] text-neutral-400 sm:block">ffmpeg.wasm · webcodecs · mpeg4/avi</span>
+          <span className="hidden font-mono text-[10px] text-neutral-400 sm:block">
+            {isDesktop ? 'native ffmpeg · rust engine · mpeg4/avi' : 'ffmpeg.wasm · webcodecs · mpeg4/avi'}
+          </span>
         </div>
       </header>
 
