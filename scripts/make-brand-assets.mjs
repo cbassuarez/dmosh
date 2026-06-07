@@ -47,26 +47,20 @@ async function squareIcon(bg) {
 }
 
 async function dmgBackground() {
+  // Rendered at 2x (1320×800) of the 660×400 DMG window for a crisp retina
+  // background. Minimal + light, matching the web app: off-white, IBM Plex Mono
+  // wordmark, a hairline rule, and one restrained arrow toward Applications.
+  // Icons sit at (180,170) and (480,170) in window points → ×2 here.
   const svg = `
-  <svg width="660" height="400" xmlns="http://www.w3.org/2000/svg">
-    <rect width="660" height="400" fill="#f6f5f3"/>
-    <!-- restrained datamosh smear: a faint row of displaced macroblocks -->
-    <g opacity="0.16">
-      <rect x="120" y="300" width="46" height="22" fill="#f4a01e"/>
-      <rect x="166" y="300" width="22" height="22" fill="#e2581f"/>
-      <rect x="188" y="300" width="60" height="22" fill="#f4c01e"/>
-      <rect x="248" y="300" width="18" height="22" fill="#2bb673"/>
-      <rect x="300" y="300" width="40" height="22" fill="#f4a01e"/>
-      <rect x="360" y="300" width="26" height="22" fill="#3aa6c9"/>
-      <rect x="404" y="300" width="70" height="22" fill="#e2581f"/>
-      <rect x="474" y="300" width="30" height="22" fill="#f4c01e"/>
-    </g>
-    <text x="330" y="52" text-anchor="middle" font-family="monospace" font-size="22" font-weight="600" fill="#1a1a1a" letter-spacing="2">dmosh</text>
-    <text x="330" y="74" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#9a9a9a">drag dmosh into your Applications folder</text>
-    <!-- arrow from the app icon (180,170) to Applications (480,170) -->
-    <g stroke="#ff5135" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.85">
-      <line x1="258" y1="170" x2="402" y2="170"/>
-      <polyline points="390,160 404,170 390,180"/>
+  <svg width="1320" height="800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1320" height="800" fill="#fafafa"/>
+    <text x="660" y="150" text-anchor="middle" font-family="'IBM Plex Mono','SF Mono',monospace" font-size="40" font-weight="600" fill="#171717" letter-spacing="4">dmosh</text>
+    <line x1="600" y1="186" x2="720" y2="186" stroke="#e5e5e5" stroke-width="2"/>
+    <text x="660" y="228" text-anchor="middle" font-family="'IBM Plex Sans','Helvetica Neue',sans-serif" font-size="22" fill="#9ca3af" letter-spacing="0.5">drag to Applications</text>
+    <!-- one quiet arrow, app (360,340) → Applications (960,340) -->
+    <g stroke="#d97757" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="556" y1="340" x2="772" y2="340"/>
+      <polyline points="752,322 776,340 752,358"/>
     </g>
   </svg>`
   await sharp(Buffer.from(svg)).png().toFile(resolve(root, 'src-tauri/dmg-background.png'))

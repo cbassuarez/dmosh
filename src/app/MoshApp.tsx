@@ -45,6 +45,17 @@ const DESKTOP_URL = `${GITHUB_URL}#desktop-app`
 const BUY_URL = 'https://dmosh.com/buy'
 const SPONSOR_URL = 'https://github.com/sponsors/cbassuarez'
 
+// Open a URL in the system browser. The Tauri webview blocks `target=_blank` /
+// window.open, so on desktop we route external links through the opener plugin.
+async function openExternal(url: string) {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener')
+    await openUrl(url)
+  } else {
+    window.open(url, '_blank', 'noopener')
+  }
+}
+
 function prettySize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
@@ -238,13 +249,28 @@ export default function MoshApp() {
         if (e.payload === 'mosh') a.mosh()
         else if (e.payload === 'save') a.save()
         else if (e.payload === 'open') a.open()
-        else if (e.payload === 'github') window.open(GITHUB_URL, '_blank')
-        else if (e.payload === 'sponsor') window.open(SPONSOR_URL, '_blank')
+        else if (e.payload === 'github') void openExternal(GITHUB_URL)
+        else if (e.payload === 'sponsor') void openExternal(SPONSOR_URL)
       }).then((u) => {
         unlisten = u
       }),
     )
     return () => unlisten?.()
+  }, [isDesktop])
+
+  // Desktop: route every external link through the system browser (the webview
+  // swallows target=_blank), so the About modal, header, and buy links all work.
+  useEffect(() => {
+    if (!isDesktop) return
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest('a')
+      if (a && /^https?:/i.test(a.href)) {
+        e.preventDefault()
+        void openExternal(a.href)
+      }
+    }
+    document.addEventListener('click', onClick)
+    return () => document.removeEventListener('click', onClick)
   }, [isDesktop])
 
   return (

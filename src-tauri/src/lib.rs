@@ -162,6 +162,7 @@ pub fn run() {
     configure_ffmpeg();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .menu(|handle| build_menu(handle))
         .on_menu_event(|app, event| {
             let id = event.id().0.as_str();
