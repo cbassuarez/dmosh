@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13 # x86_64 build — runs on Apple Silicon via Rosetta
+          - os: macos-14 # x86_64 build — runs on Apple Silicon via Rosetta
           - os: ubuntu-22.04
           - os: windows-latest
     runs-on: ${{ matrix.os }}
