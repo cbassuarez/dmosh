@@ -7,7 +7,7 @@
 // macOS we fall back to copying the system ffmpeg for LOCAL dev — that binary is
 // NOT portable; CI/release on macOS must drop in a real static build.
 import { execSync } from 'node:child_process'
-import { existsSync, mkdirSync, copyFileSync, chmodSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, copyFileSync, chmodSync, rmSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, platform, arch } from 'node:os'
@@ -102,18 +102,31 @@ if (!dl) {
   process.exit(0)
 }
 
+// Recursive file search (cross-platform; Windows has no Unix `find`).
+function findFile(dir, name) {
+  for (const entry of readdirSync(dir)) {
+    const p = join(dir, entry)
+    if (statSync(p).isDirectory()) {
+      const hit = findFile(p, name)
+      if (hit) return hit
+    } else if (entry === name) {
+      return p
+    }
+  }
+  return null
+}
+
 const work = join(tmpdir(), `ffmpeg-dl-${Date.now()}`)
 mkdirSync(work, { recursive: true })
 try {
-  const archive = join(work, key.includes('win') ? 'ff.zip' : 'ff.tar.xz')
+  // win/macOS archives are zip, linux is tar.xz. `tar` (bsdtar on win/macOS)
+  // extracts both, so we avoid `unzip` which isn't present on Windows runners.
+  const isZip = key.includes('win') || key.includes('darwin')
+  const archive = join(work, isZip ? 'ff.zip' : 'ff.tar.xz')
   console.log(`[ffmpeg-sidecar] downloading ${dl.url}`)
   await download(dl.url, archive)
-  if (archive.endsWith('.zip')) {
-    execSync(`unzip -o ${archive} -d ${work}`, { stdio: 'ignore' })
-  } else {
-    execSync(`tar -xf ${archive} -C ${work}`, { stdio: 'ignore' })
-  }
-  const found = execSync(`find ${work} -type f -name ${dl.inner}`).toString().trim().split('\n')[0]
+  execSync(`tar -xf "${archive}" -C "${work}"`, { stdio: 'ignore' })
+  const found = findFile(work, dl.inner)
   if (!found) throw new Error(`${dl.inner} not found in archive`)
   copyFileSync(found, dest)
   chmodSync(dest, 0o755)
