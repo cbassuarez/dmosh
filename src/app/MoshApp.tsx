@@ -269,8 +269,10 @@ export default function MoshApp() {
         void openExternal(a.href)
       }
     }
-    document.addEventListener('click', onClick)
-    return () => document.removeEventListener('click', onClick)
+    // Capture phase: fires before the modals' onClick stopPropagation, which
+    // otherwise swallows the bubbling click before it reaches this listener.
+    document.addEventListener('click', onClick, true)
+    return () => document.removeEventListener('click', onClick, true)
   }, [isDesktop])
 
   return (
