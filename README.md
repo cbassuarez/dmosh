@@ -4,7 +4,7 @@ a simple, effective way to datamosh video clips.
 
 [![Release](https://img.shields.io/github/v/release/cbassuarez/dmosh?style=flat-square&color=ff5135)](https://github.com/cbassuarez/dmosh/releases/latest)
 [![CI and Deploy](https://github.com/cbassuarez/dmosh/actions/workflows/ci.yml/badge.svg)](https://github.com/cbassuarez/dmosh/actions/workflows/ci.yml)
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-live-37f5a5?style=flat-square)](https://cbassuarez.github.io/dmosh/)
+[![dmosh.com](https://img.shields.io/badge/dmosh.com-live-37f5a5?style=flat-square)](https://dmosh.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111111?style=flat-square)](LICENSE)
 
 https://github.com/user-attachments/assets/fe8353ba-561d-4892-bb0e-ac85cd3c0c10
@@ -65,7 +65,7 @@ npm run tauri:build     # → src-tauri/target/release/bundle/
 
 ### Paid - prebuilt download
 
-Don't want to install a toolchain? **[Buy a prebuilt build](https://cbassuarez.github.io/dmosh/buy)** —
+Don't want to install a toolchain? **[Buy a prebuilt build](https://dmosh.com/buy)** —
 signed, auto-updating, ready to run. It starts as a free trial; after
 that you paste in a license key to keep going. Paying just saves you the build
 step and funds development.

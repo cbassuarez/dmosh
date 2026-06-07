@@ -2,11 +2,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const isGitHubPages = !!process.env.GITHUB_PAGES_BASE;
-
 export default defineConfig({
   plugins: [react()],
-  base: isGitHubPages ? "/dmosh/" : "/",
+  // Served at the apex of the custom domain (dmosh.com), so assets live at root.
+  base: "/",
   resolve: {
     alias: {
       "@": "/src",

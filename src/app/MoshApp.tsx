@@ -42,9 +42,7 @@ const SOFT_SIZE_WARN = 40 * 1024 * 1024
 const GITHUB_URL = 'https://github.com/cbassuarez/dmosh'
 const RELEASE_URL = `${GITHUB_URL}/releases/latest`
 const DESKTOP_URL = `${GITHUB_URL}#desktop-app`
-// The live site (GitHub Pages). The buy/checkout flow will live here; until a
-// real store is wired, this lands on the site rather than a fictional domain.
-const BUY_URL = 'https://cbassuarez.github.io/dmosh/buy'
+const BUY_URL = 'https://dmosh.com/buy'
 const SPONSOR_URL = 'https://github.com/sponsors/cbassuarez'
 
 function prettySize(bytes: number): string {
