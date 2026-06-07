@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "tauri": "tauri",
+    "tauri:checked": "node scripts/tauri-build-checked.mjs",
     "fetch-ffmpeg": "node scripts/fetch-ffmpeg-sidecar.mjs",
     "brand": "node scripts/make-brand-assets.mjs",
     "tauri:dev": "node scripts/fetch-ffmpeg-sidecar.mjs && tauri dev",

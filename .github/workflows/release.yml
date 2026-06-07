@@ -67,11 +67,92 @@ jobs:
       - name: Fetch ffmpeg sidecar
         run: node scripts/fetch-ffmpeg-sidecar.mjs
 
+      - name: Configure macOS signing
+        if: matrix.os == 'macos-14'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_SECRET: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD_SECRET: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_SECRET: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_SECRET: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8_SECRET: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_PROVIDER_SHORT_NAME_SECRET: ${{ secrets.APPLE_PROVIDER_SHORT_NAME }}
+        run: |
+          set -euo pipefail
+
+          append_env() {
+            local name="$1"
+            local value="$2"
+            if [[ -n "$value" ]]; then
+              {
+                echo "$name<<__${name}__"
+                echo "$value"
+                echo "__${name}__"
+              } >> "$GITHUB_ENV"
+            fi
+          }
+
+          append_env APPLE_CERTIFICATE "$APPLE_CERTIFICATE_SECRET"
+          append_env APPLE_CERTIFICATE_PASSWORD "$APPLE_CERTIFICATE_PASSWORD_SECRET"
+          append_env APPLE_SIGNING_IDENTITY "$APPLE_SIGNING_IDENTITY_SECRET"
+          append_env APPLE_ID "$APPLE_ID_SECRET"
+          append_env APPLE_PASSWORD "$APPLE_PASSWORD_SECRET"
+          append_env APPLE_TEAM_ID "$APPLE_TEAM_ID_SECRET"
+          append_env APPLE_API_ISSUER "$APPLE_API_ISSUER_SECRET"
+          append_env APPLE_API_KEY "$APPLE_API_KEY_SECRET"
+          append_env APPLE_PROVIDER_SHORT_NAME "$APPLE_PROVIDER_SHORT_NAME_SECRET"
+
+          api_notary=0
+          apple_id_notary=0
+
+          if [[ -n "$APPLE_API_KEY_SECRET" || -n "$APPLE_API_ISSUER_SECRET" || -n "$APPLE_API_KEY_P8_SECRET" ]]; then
+            if [[ -z "$APPLE_API_KEY_SECRET" || -z "$APPLE_API_ISSUER_SECRET" || -z "$APPLE_API_KEY_P8_SECRET" ]]; then
+              echo "::error::App Store Connect notarization requires APPLE_API_KEY, APPLE_API_ISSUER, and APPLE_API_KEY_P8."
+              exit 1
+            fi
+            api_notary=1
+          fi
+
+          if [[ -n "$APPLE_ID_SECRET" || -n "$APPLE_PASSWORD_SECRET" || -n "$APPLE_TEAM_ID_SECRET" ]]; then
+            if [[ -z "$APPLE_ID_SECRET" || -z "$APPLE_PASSWORD_SECRET" || -z "$APPLE_TEAM_ID_SECRET" ]]; then
+              echo "::error::Apple ID notarization requires APPLE_ID, APPLE_PASSWORD, and APPLE_TEAM_ID."
+              exit 1
+            fi
+            apple_id_notary=1
+          fi
+
+          if [[ "$api_notary" == 1 ]]; then
+            mkdir -p "$RUNNER_TEMP/dmosh-private-keys"
+            key_path="$RUNNER_TEMP/dmosh-private-keys/AuthKey_${APPLE_API_KEY_SECRET}.p8"
+            printf '%s' "$APPLE_API_KEY_P8_SECRET" > "$key_path"
+            chmod 600 "$key_path"
+            append_env APPLE_API_KEY_PATH "$key_path"
+          fi
+
+          if [[ -n "$APPLE_CERTIFICATE_SECRET" ]]; then
+            if [[ -z "$APPLE_CERTIFICATE_PASSWORD_SECRET" || -z "$APPLE_SIGNING_IDENTITY_SECRET" ]]; then
+              echo "::error::Set APPLE_CERTIFICATE_PASSWORD and APPLE_SIGNING_IDENTITY with APPLE_CERTIFICATE."
+              exit 1
+            fi
+            if [[ "$api_notary" == 0 && "$apple_id_notary" == 0 ]]; then
+              echo "::error::Developer ID macOS releases must be notarized. Set APPLE_API_KEY/APPLE_API_ISSUER/APPLE_API_KEY_P8 or APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID."
+              exit 1
+            fi
+          else
+            append_env APPLE_SIGNING_IDENTITY "-"
+            echo "::warning::APPLE_CERTIFICATE is not configured; macOS release will be ad-hoc signed and require Open Anyway."
+          fi
+
       - name: Build and publish
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tauriScript: npm run tauri:checked --
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: dmosh ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: |
@@ -79,7 +160,7 @@ jobs:
 
             Starts as a free trial; activate with a license key from https://dmosh.com/buy — or build it yourself, it's open source.
 
-            > Builds are unsigned for now, so macOS Gatekeeper / Windows SmartScreen will warn on first launch (on macOS: right-click → Open).
+            > macOS builds are notarized when the repository's Apple Developer signing secrets are configured. Without those secrets they are ad-hoc signed only, so Gatekeeper may require System Settings → Privacy & Security → Open Anyway on first launch.
           releaseDraft: false
           prerelease: false
           # Official prebuilt = trial-then-key build; self-compiled source stays free/unlocked.

@@ -5,6 +5,6 @@ export default defineConfig({
     // Engine tests (src/mosh) are pure and run fine in node.
     environment: "node",
     globals: true,
-    exclude: ["node_modules/**", "dist/**", ".git/**"],
+    exclude: ["**/node_modules/**", "dist/**", ".git/**"],
   },
 });
